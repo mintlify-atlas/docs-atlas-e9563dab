@@ -1,0 +1,99 @@
+{
+  "projectType": "saas",
+  "projectName": "Slides",
+  "projectDescription": "A high-performance, AI-assisted presentation editing platform that lets users create polished slideshows through natural language interaction.",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#e0e7ff",
+  "darkColor": "#312e81",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/ai-assistant",
+              "features/slide-editor",
+              "features/block-types",
+              "features/concepts"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/standalone-binary",
+              "deployment/cli-options",
+              "deployment/configuration",
+              "deployment/environment-variables"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/monorepo-structure",
+              "architecture/data-flow",
+              "architecture/tech-stack"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview"
+            ]
+          },
+          {
+            "group": "Slideshow",
+            "pages": [
+              "api/slideshow/load",
+              "api/slideshow/save",
+              "api/slideshow/assistant"
+            ]
+          },
+          {
+            "group": "Data Types",
+            "pages": [
+              "api/types/slideshow",
+              "api/types/slide",
+              "api/types/blocks"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AI-assisted slide creation via natural language (powered by Anthropic Claude)",
+    "Rich block types: explainer, code, diagram, chart, KPI, gantt, table, layers, metrics grid, objectives, image",
+    "End-to-end type-safe RPC API using ORPC between frontend and backend",
+    "Standalone cross-platform binary for portable deployment (macOS, Linux, Windows)",
+    "Concept-based slide categorization with color-coded themes",
+    "Patch-based slideshow state management with digest-based staleness detection",
+    "Real-time JSON slideshow persistence to local filesystem",
+    "Monorepo with shared TypeScript packages for domain logic and API contracts"
+  ],
+  "publicApiSurface": [
+    "slideshowAssistant — POST /rpc: Send a natural language request to the AI assistant to modify slideshows",
+    "slideshowLoad — POST /rpc: Load slideshows from the filesystem, optionally filtered by dataset ID",
+    "slideshowSave — POST /rpc: Save slideshows to the filesystem with digest-based conflict detection",
+    "Slideshow schema (TypeBox/Zod): { id, title, concepts, slides }",
+    "Slide schema: { id, order, concept, explanation, blocks }",
+    "Block schema: { explainer, codeBlock, diagram, gantt, table, chart, kpi, kpiGrid, radialMetric, layers, metricsGrid, objectivesDisplay, image }",
+    "CLI flags: --port, --data-dir, --api-key, --open, --init, --install-path, --help"
+  ]
+}
