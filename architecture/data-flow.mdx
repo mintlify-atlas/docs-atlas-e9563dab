@@ -124,47 +124,52 @@ The user types a natural language prompt in the assistant panel. The frontend pa
 ```typescript
 // AssistantRequest shape (from packages/api/src/slideshow/schemas.ts)
 {
-  slideshowId: string,
-  prompt: string,           // e.g. "Make the title slide more concise"
-  currentSlideshow: Slideshow
+  slideshows: Slideshow[],          // all loaded slideshows
+  currentSlideshowIndex: number,    // active slideshow index
+  currentSlide: number,             // active slide index
+  userInput: string,                // e.g. "Make the title slide more concise"
+  previousMessages?: AssistantMessagePayload[],  // conversation history
+  useFullContext: boolean,          // true = full slideshow, false = current slide only
 }
 ```
 
 ### Step 2 — Server calls Anthropic Claude
 
-The `handleSlideshowAssistant` service in `packages/api/src/slideshow/assistant-service.ts` receives the request. It builds a system prompt (from `packages/core/src/prompts.ts`) that instructs Claude on the slideshow data model and the JSON Patch format expected in its response. It then calls the Anthropic API with the user's prompt and the current slideshow as context.
+The `handleSlideshowAssistant` service in `packages/api/src/slideshow/assistant-service.ts` receives the request. It:
 
-### Step 3 — Claude responds with JSON patch operations
+1. Creates a `StateDigest` — a lightweight snapshot of the slideshow state (slide count, IDs, concept keys).
+2. Calls `buildAssistantMessages` from `packages/core` to assemble the Anthropic message array, including the system prompt and current context (full slideshow or current slide).
+3. Calls the Anthropic Messages API at `https://api.anthropic.com/v1/messages` with `SLIDESHOW_SYSTEM_PROMPT` and the assembled messages.
 
-Claude returns a structured JSON response containing an array of [JSON Patch](https://jsonpatch.com/) operations targeting specific paths in the slideshow document, plus a human-readable summary of what was changed.
+### Step 3 — Claude returns a text response with an embedded JSON patch
 
-```json
-{
-  "operations": [
-    { "op": "replace", "path": "/slides/0/title", "value": "New Title" },
-    { "op": "add", "path": "/slides/0/blocks/-", "value": { ... } }
-  ],
-  "summary": "Updated the title slide with a more concise heading."
-}
-```
+Claude returns a plain text response that embeds JSON Patch operations in its body. The service extracts the patch using `extractPatchFromResponse` from `packages/core`.
 
-### Step 4 — Service validates and applies the patch
+### Step 4 — Patch is validated, NOT applied
 
-The service validates Claude's output against the expected patch schema (using helpers from `packages/core`). Valid patches are applied to the current slideshow using the transaction utilities in `packages/core/src/transactions.ts`. Invalid or out-of-bounds patches are rejected with a typed error.
+The service calls `validatePatchWithSemantics` to check the patch against the current slideshow structure. This produces a `PatchOrchestrationResult`:
+
+- `"ok"` — patch is valid; a `PatchTransaction` (immutable record) is created via `buildPatchTransactionFromResponse`
+- `"invalid"` — patch failed semantic validation; errors are returned for display
+- `"noop"` — no patch found in the response or the target slide is missing
+
+**The patch is not applied server-side.** The server returns the transaction to the client, which decides whether to apply it.
 
 ### Step 5 — AssistantResponse returned to client
 
-The service returns an `AssistantResponse` containing the patched slideshow and the summary string:
+The service returns an `AssistantResponsePayload`:
 
 ```typescript
-// AssistantResponse shape
+// AssistantResponsePayload shape (from packages/core/src/schema/assistant.ts)
 {
-  slideshow: Slideshow,  // Updated slideshow after patch applied
-  summary: string        // Human-readable description of changes
+  assistantText: string,            // Claude's full text response
+  wasTruncated: boolean,            // true if hit max_tokens
+  patchResult: PatchOrchestrationResult,  // ok | invalid | noop
+  digest: StateDigest,              // snapshot for staleness detection
 }
 ```
 
-The frontend receives this response, updates its local state with the new slideshow, and displays the summary to the user.
+The frontend holds the `PatchTransaction` as pending. The user clicks **Apply** to apply it locally. Before applying, `evaluateTransactionFreshness` checks whether the slideshow state has drifted since the response was generated.
 
 ### AI flow diagram
 
@@ -172,7 +177,8 @@ The frontend receives this response, updates its local state with the new slides
 User prompt
     │
     ▼
-AssistantRequest { slideshowId, prompt, currentSlideshow }
+AssistantRequest { slideshows, currentSlideshowIndex, currentSlide,
+                   userInput, previousMessages, useFullContext }
     │
     ▼  (HTTP POST /rpc)
 ORPC contract validates input
@@ -181,28 +187,25 @@ ORPC contract validates input
 Router → handleSlideshowAssistant(input, context.anthropic)
     │
     ▼
-Build system prompt  (packages/core/src/prompts.ts)
+createStateDigest + buildAssistantMessages  (packages/core)
     │
     ▼
-Anthropic Claude API call
+Anthropic Claude API call  (POST api.anthropic.com/v1/messages)
     │
     ▼
-Claude returns JSON patch operations + summary
+extractPatchFromResponse  (packages/core)
     │
     ▼
-Validate patch schema  (packages/core validation)
+validatePatchWithSemantics  (packages/core) → PatchOrchestrationResult
     │
     ▼
-Apply patch to slideshow  (packages/core transactions)
-    │
-    ▼
-AssistantResponse { slideshow, summary }
+AssistantResponsePayload { assistantText, wasTruncated, patchResult, digest }
     │
     ▼  (HTTP response)
 ORPC contract validates output
     │
     ▼
-TanStack Query updates cache → React re-renders
+Client receives PatchTransaction → user clicks Apply → patch applied locally
 ```
 
 <Note>

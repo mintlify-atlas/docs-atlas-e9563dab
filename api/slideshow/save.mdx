@@ -46,16 +46,23 @@ The `slideshowSave` procedure writes a full array of `Slideshow` objects to the 
 ```typescript TypeScript
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { AppRouter } from "@slides/api";
+import type { AppRouter } from "@slides/api/routers/index";
 
 const client = createORPCClient<AppRouter>(
   new RPCLink({ url: "http://localhost:3000/rpc" })
 );
 
-// Load, modify, and save with staleness protection
+// Load slideshows
 const loaded = await client.slideshowLoad({ datasetId: "my-project" });
-const digest = loaded.provenance["0"]?.sourceId; // capture current digest
 
+// Save and capture the returned digest for future staleness checks
+const firstSave = await client.slideshowSave({
+  datasetId: "my-project",
+  slideshows: loaded.slideshows,
+});
+const savedDigest = firstSave.digest; // store this for the next save
+
+// Later: modify and save again with staleness protection
 const updatedSlideshows = loaded.slideshows.map((sw) => ({
   ...sw,
   title: sw.title + " (updated)",
@@ -64,8 +71,7 @@ const updatedSlideshows = loaded.slideshows.map((sw) => ({
 const result = await client.slideshowSave({
   datasetId: "my-project",
   slideshows: updatedSlideshows,
-  // omit expectedDigest to always overwrite, or pass a prior digest:
-  // expectedDigest: previousDigest,
+  expectedDigest: savedDigest, // reject if another save happened since
 });
 
 console.log(result.success); // true
@@ -115,8 +121,8 @@ curl -X POST http://localhost:3000/rpc/slideshowSave \
 The `expectedDigest` field implements optimistic concurrency control. The workflow is:
 
 1. Call `slideshowLoad` to get the current data.
-2. Note the `digest` returned from a subsequent `slideshowSave`, or capture it from the provenance on load.
-3. When saving changes, pass that digest as `expectedDigest`.
+2. Call `slideshowSave` to save, and capture the `digest` from the response.
+3. On the next save, pass that `digest` as `expectedDigest`.
 4. If another client saved in the meantime, the digests will differ and the save is rejected.
 5. On rejection, reload the latest data, re-apply your changes, and save again.
 

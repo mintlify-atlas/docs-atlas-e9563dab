@@ -85,26 +85,27 @@ The `slideshowAssistant` procedure accepts the following input:
   Your natural language request, e.g. `"Add a bar chart showing monthly revenue"`.
 </ParamField>
 
-<ParamField body="previousMessages" type="AssistantMessage[]">
-  Optional array of prior conversation turns. Each entry has `role` (`"user"` or `"assistant"`) and `content`. Pass this to maintain conversational context across turns.
+<ParamField body="previousMessages" type="AssistantMessagePayload[]">
+  Optional array of prior conversation turns. Each entry has `role` (`"user"`, `"assistant"`, or `"system"`) and `content`. Pass this to maintain conversational context across turns.
 </ParamField>
 
 <ParamField body="useFullContext" type="boolean" required>
   When `true`, the full slideshow JSON is included in the prompt. When `false`, only the current slide is included.
 </ParamField>
 
-### AssistantMessage shape
+### AssistantMessagePayload shape
+
+The `previousMessages` array uses `AssistantMessagePayload` from `@slides/core/schema/assistant`:
 
 ```typescript
-type AssistantMessage = {
+// From packages/core/src/schema/assistant.ts
+type AssistantMessagePayload = {
   role: "user" | "assistant" | "system";
   content: string;
-  type?: "patch-summary" | "validation-error";
-  data?: unknown;
 };
 ```
 
-When sending `previousMessages`, only messages with `role: "user"` or `role: "assistant"` are forwarded to the Anthropic API. System messages are filtered out on the frontend.
+When forwarding messages to the Anthropic API, the service appends all previous messages verbatim. Filter out any system-role messages from your frontend state before passing `previousMessages`.
 
 ## Example: request and response
 
@@ -235,7 +236,7 @@ A `PatchTransaction` carries the `StateDigest` captured at response time. Before
 
 - **fresh** — digest matches current state; apply proceeds.
 - **stale** — the slideshow structure changed (concept drift or structural drift) since the patch was generated. The patch is discarded and you can re-ask.
-- **expired** — the transaction's `createdAt` timestamp is too old (default TTL: controlled by `TX_TTL_MS`). The patch is discarded.
+- **expired** — the transaction's `createdAt` timestamp is too old. The patch is discarded.
 
 ## Error codes
 

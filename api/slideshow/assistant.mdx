@@ -143,7 +143,7 @@ The assistant does not mutate data directly — it returns a `patchResult` that 
 ```typescript TypeScript
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { AppRouter } from "@slides/api";
+import type { AppRouter } from "@slides/api/routers/index";
 import type { AssistantConversationMessage } from "@slides/core";
 
 const client = createORPCClient<AppRouter>(

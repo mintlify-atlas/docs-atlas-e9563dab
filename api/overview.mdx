@@ -17,9 +17,19 @@ The server runs locally. No authentication is required — Slides is a local-fir
 
 | Procedure | Description |
 |-----------|-------------|
+| `healthCheck` | Returns `"OK"` — use to verify the server is reachable |
 | `slideshowLoad` | Load slideshows from the filesystem, optionally filtered by dataset ID |
 | `slideshowSave` | Save slideshows back to the filesystem with optional staleness protection |
 | `slideshowAssistant` | Send a natural language request to the AI assistant to modify slides |
+
+## Other server endpoints
+
+In addition to ORPC procedures, the server exposes these HTTP endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /img/*` | Serves image files from the `img/` subdirectory inside the data directory. Used by image blocks in slideshows. |
+| `GET /api-reference` | OpenAPI 3.x specification auto-generated from procedure contracts. |
 
 ## Calling the API
 
@@ -27,12 +37,12 @@ You can call procedures in two ways: using the typed ORPC client (recommended fo
 
 ### TypeScript client
 
-Import the `AppRouter` type from `@slides/api` to get full end-to-end type safety. You never need to write the procedure name as a string — the client infers it from the type.
+Import the `AppRouter` type from `@slides/api/routers/index` to get full end-to-end type safety. You never need to write the procedure name as a string — the client infers it from the type.
 
 ```typescript
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { AppRouter } from "@slides/api";
+import type { AppRouter } from "@slides/api/routers/index";
 
 const client = createORPCClient<AppRouter>(
   new RPCLink({

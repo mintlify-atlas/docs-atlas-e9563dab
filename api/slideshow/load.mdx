@@ -33,7 +33,7 @@ The `slideshowLoad` procedure reads slideshow data from the filesystem and retur
       Currently only `"fs"` (filesystem) is implemented.
     </ResponseField>
     <ResponseField name="[index].sourceId" type="string" required>
-      An identifier for the source — for filesystem sources, this is the file path.
+      An identifier for the source — for filesystem sources, this is the dataset ID (the filename without the `.json` extension, e.g. `"default"` or `"q4-roadmap"`).
     </ResponseField>
     <ResponseField name="[index].writable" type="boolean" required>
       Whether the slideshow can be saved back to its source. If `false`, calls to `slideshowSave` targeting this dataset may fail.
@@ -51,7 +51,7 @@ The `slideshowLoad` procedure reads slideshow data from the filesystem and retur
 ```typescript TypeScript
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { AppRouter } from "@slides/api";
+import type { AppRouter } from "@slides/api/routers/index";
 
 const client = createORPCClient<AppRouter>(
   new RPCLink({ url: "http://localhost:3000/rpc" })
@@ -68,7 +68,7 @@ const namedResult = await client.slideshowLoad({
 
 // Inspect provenance for the first slideshow
 const firstProvenance = namedResult.provenance["0"];
-console.log(firstProvenance.sourceId);  // e.g. "/data/q4-roadmap.json"
+console.log(firstProvenance.sourceId);  // e.g. "q4-roadmap" (dataset ID)
 console.log(firstProvenance.writable);  // true if saveable
 ```
 
@@ -117,9 +117,9 @@ curl -X POST http://localhost:3000/rpc/slideshowLoad \
   "provenance": {
     "0": {
       "sourceType": "fs",
-      "sourceId": "/data/q4-roadmap.json",
+      "sourceId": "q4-roadmap",
       "writable": true,
-      "targetId": "/data/q4-roadmap.json"
+      "targetId": "q4-roadmap"
     }
   }
 }

@@ -35,7 +35,7 @@ If the port is already in use, the server will fail to start. Free the port firs
 
 ## --data-dir
 
-Specifies the directory from which slideshow JSON files are loaded. The path is resolved to an absolute path at startup. If the directory does not exist, the server will fall back to the bundled `data/slideshows/` directory inside the extracted archive.
+Specifies the directory from which slideshow JSON files are loaded. The path is resolved to an absolute path at startup. When `--data-dir` is provided, the server uses that path exclusively — no fallback applies. If omitted, the server searches in order: `data/slideshows/` adjacent to the binary, then `data/slideshows/` in the current working directory.
 
 ```bash
 ./slides --data-dir /home/you/presentations
