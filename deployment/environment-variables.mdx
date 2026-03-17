@@ -1,0 +1,188 @@
+---
+title: "Environment variables"
+description: "All environment variables for the Slides server and web frontend."
+---
+
+Slides uses `.env` files to configure the server and the web frontend in development. Copy the example files before your first run:
+
+```bash
+cp apps/server/.env.example apps/server/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+Edit each file with your local values. Neither file should ever be committed to source control — both are listed in `.gitignore`.
+
+<Warning>
+Never commit `.env` files. They may contain secrets such as your Anthropic API key.
+</Warning>
+
+---
+
+## Server environment variables
+
+These variables are read by `apps/server` at startup. They are validated against a TypeBox schema and the server will throw on import if a required variable is missing or has an invalid type.
+
+### `PORT`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | `3000` |
+| **Type** | number |
+
+The TCP port the HTTP server listens on.
+
+```bash
+PORT=4000
+```
+
+---
+
+### `CORS_ORIGIN`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | `http://localhost:3001` |
+| **Type** | string |
+
+The origin(s) allowed by the CORS middleware. In development this should match the Vite dev server URL. In standalone binary mode, CORS is automatically opened to all origins and this variable has no effect.
+
+```bash
+CORS_ORIGIN=http://localhost:3001
+```
+
+---
+
+### `DATA_DIR`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | `CWD/data/slideshows` → bundled location |
+| **Type** | string (path) |
+
+Absolute or relative path to the directory containing slideshow JSON files. If not set, the server looks for `data/slideshows` relative to the current working directory and then falls back to the bundled data location inside the binary.
+
+```bash
+DATA_DIR=/var/data/presentations
+```
+
+---
+
+### `ANTHROPIC_API_KEY`
+
+| | |
+|---|---|
+| **Required** | No (but required for AI features) |
+| **Default** | (none) |
+| **Type** | string |
+
+API key for the Anthropic Claude API. The server starts and serves slideshows without it, but all AI assistant features will be unavailable until a valid key is provided.
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-xxx
+```
+
+<Note>
+Obtain an API key from [console.anthropic.com](https://console.anthropic.com). Keep this value out of source control.
+</Note>
+
+---
+
+### `ANTHROPIC_MODEL`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | `claude-sonnet-4-20250514` |
+| **Type** | string |
+
+The Anthropic model identifier used for AI assistant requests. Override this to pin to a specific model version or switch to a different Claude model.
+
+```bash
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+```
+
+---
+
+### `ANTHROPIC_MAX_TOKENS`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | `16384` |
+| **Type** | number |
+
+Maximum number of tokens the AI assistant may generate in a single response. Increase for longer outputs or decrease to reduce cost per request.
+
+```bash
+ANTHROPIC_MAX_TOKENS=16384
+```
+
+---
+
+### `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | (none) |
+| **Type** | string |
+
+Reserved for the authentication system, which is not yet implemented. Leave these blank in current deployments.
+
+---
+
+## Web environment variables
+
+These variables are read by `apps/web` at **build time** by Vite. They must be prefixed with `VITE_` to be accessible in browser code. Variables without this prefix are stripped from the bundle.
+
+### `VITE_SERVER_URL`
+
+| | |
+|---|---|
+| **Required** | No |
+| **Default** | `http://localhost:3000` |
+| **Type** | string (URL) |
+
+The base URL of the Slides API server. The frontend ORPC client sends all requests to this origin. In development this points to the local backend. In production builds, set it to the public URL where the server is reachable.
+
+```bash
+VITE_SERVER_URL=http://localhost:3000
+```
+
+<Note>
+In standalone binary mode, `VITE_SERVER_URL` is set to an empty string at build time so the frontend resolves the server URL relative to the page origin. You do not need to configure this variable when using the pre-built standalone binary.
+</Note>
+
+---
+
+## Full example files
+
+<CodeGroup>
+
+```bash apps/server/.env
+# Server Configuration
+PORT=3000
+CORS_ORIGIN=http://localhost:3001
+
+# Data Directory
+# DATA_DIR=/path/to/your/slideshows
+
+# Anthropic API
+ANTHROPIC_API_KEY=sk-ant-xxx
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_MAX_TOKENS=16384
+
+# Auth (not yet implemented)
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=
+```
+
+```bash apps/web/.env
+# Client Configuration (VITE_ prefix required for browser access)
+VITE_SERVER_URL=http://localhost:3000
+```
+
+</CodeGroup>

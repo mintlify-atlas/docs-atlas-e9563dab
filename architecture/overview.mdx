@@ -1,0 +1,106 @@
+---
+title: "Architecture overview"
+description: "How Slides is structured as a full-stack monorepo with end-to-end type safety, framework-agnostic domain logic, and a single shared API package."
+---
+
+Slides is a full-stack TypeScript monorepo built for AI-assisted presentation editing. Every layer of the stack is designed around a single core principle: **apps are thin consumers of shared packages**. Business logic lives in packages, not in applications.
+
+## Core principles
+
+### Apps depend on packages
+
+The two applications (`apps/web` and `apps/server`) contain no domain logic. They import from shared packages and focus only on their transport concerns: rendering the UI and hosting the HTTP server respectively. If you need to add slideshow validation or a new AI helper, the change goes into a package — not into an app.
+
+### Framework-agnostic domain logic
+
+`packages/core` is pure TypeScript. It has no dependency on React, Elysia, or any other framework. This means the core domain — slideshow schemas, validation rules, AI helpers, patch transactions — can be tested in isolation, reused across contexts, and evolved without touching application code.
+
+### End-to-end type safety via ORPC
+
+The frontend and backend share the same `AppRouter` type from `packages/api`. There is no code generation step. When you change a procedure's input or output in `contracts.ts`, the TypeScript compiler immediately surfaces type errors wherever that procedure is called on the frontend. Breaking changes are caught at compile time, not at runtime.
+
+### Feature-sliced frontend
+
+The React app organizes code by feature (`features/slideshow/`) rather than by technical layer. Components, hooks, queries, and local state for a feature live together. This makes navigating and extending features straightforward without hunting across a global directory tree.
+
+### Single API package
+
+All API surface area — ORPC contracts, endpoint schemas, and orchestration services — lives in `packages/api`. There is one place to look when understanding what the backend exposes, what shapes are validated, and how external APIs (like Anthropic) are called.
+
+## The three key packages
+
+| Package | Scope | Key exports |
+|---------|-------|-------------|
+| `@slides/core` | Pure domain logic | Slideshow schemas, validation, AI helpers, patch transactions |
+| `@slides/api` | API surface | ORPC contracts, endpoint schemas, slideshow services, routers, request context |
+| `@slides/config` | Shared configuration | Server env (`./server`), client env (`./client`), logger (`./logger`) |
+
+### `@slides/core` — domain layer
+
+The single source of truth for slideshow shapes and rules. Exports types, TypeBox schemas, validators, AI helper utilities, and transaction helpers. Apps treat this as a read-only contract for what a slideshow is.
+
+```typescript
+// packages/core/src/index.ts exports:
+export * from "./types";         // TypeScript types
+export * from "./transactions";  // Patch/transaction helpers
+export * from "./ai-assistant";  // AI prompt helpers
+export * from "./validation";    // Validation functions
+export * from "./prompts";       // System prompts for Claude
+export * from "./schema";        // TypeBox schemas
+```
+
+### `@slides/api` — API surface layer
+
+Organized domain-first under `src/slideshow/`. Contracts define *what* the API exposes. Services define *how* operations are orchestrated. Routers are thin wires connecting the two.
+
+### `@slides/config` — configuration layer
+
+Validated environment access and environment-aware logging. Never access `process.env` directly in application code — always import from `@slides/config/*`.
+
+```typescript
+import { env } from "@slides/config/server";
+import { logger } from "@slides/config/logger";
+
+logger.info(`Server running on port ${env.PORT}`);
+```
+
+## The two apps
+
+### `apps/web` — React frontend
+
+A React 19 + Vite application. Responsibilities: rendering slides, routing between views, fetching and mutating data via the typed ORPC client, and managing local feature state. It imports domain types only through adapter files in `src/domain/` — never directly from `@slides/core`.
+
+### `apps/server` — Elysia backend
+
+A single-file entry point (`src/index.ts`) that hosts the ORPC handler on Bun via Elysia. It wires together environment config, a filesystem adapter for slideshow persistence, and the API router. There is no business logic in the server app itself.
+
+<Note>
+  The server compiles to a standalone binary (`bun run compile`) for portable deployment — a single executable that bundles the frontend assets and serves everything from one process.
+</Note>
+
+## Dependency direction
+
+```
+apps/web     →  packages/api  →  packages/core
+apps/server  →  packages/api  →  packages/core
+             ↘  packages/config
+```
+
+Dependencies flow one way: apps depend on packages, and `packages/api` depends on `packages/core`. The core package has no knowledge of the applications that consume it.
+
+## Explore further
+
+<CardGroup cols={2}>
+  <Card title="Monorepo structure" icon="folder-tree" href="/architecture/monorepo-structure">
+    Full directory layout for apps, packages, and configuration files
+  </Card>
+  <Card title="Data flow" icon="arrow-right-left" href="/architecture/data-flow">
+    The complete request/response cycle from React client to Anthropic and back
+  </Card>
+  <Card title="Tech stack" icon="layers" href="/architecture/tech-stack">
+    Every technology in the stack and why it was chosen
+  </Card>
+  <Card title="API reference" icon="code" href="/api/overview">
+    ORPC procedures, input/output schemas, and error types
+  </Card>
+</CardGroup>

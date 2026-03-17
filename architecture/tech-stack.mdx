@@ -1,0 +1,183 @@
+---
+title: "Tech stack"
+description: "Every technology used in Slides, what layer it operates in, and why it was chosen."
+---
+
+Slides is built on a modern, type-first TypeScript stack optimized for developer velocity and runtime performance. This page covers every significant technology choice.
+
+## Summary
+
+| Layer | Technology | Purpose |
+|-------|------------|---------|
+| Runtime | Bun | Fast JS runtime, package manager, and bundler |
+| Monorepo | TurboRepo | Build orchestration, caching, and task management |
+| Frontend | React 19 | UI library with concurrent rendering |
+| Routing | TanStack Router | Type-safe, file-based routing |
+| State | TanStack Query | Server state management and caching |
+| Backend | Elysia | High-performance web framework for Bun |
+| RPC | ORPC | End-to-end type-safe RPC with OpenAPI support |
+| Validation | TypeBox + Zod | TypeBox for domain schemas, Zod for ORPC procedures |
+| Styling | TailwindCSS v4 | Utility-first CSS |
+| AI | Anthropic Claude | LLM for natural language slide editing |
+
+## Detailed breakdown
+
+<AccordionGroup>
+  <Accordion title="Bun — runtime, package manager, bundler">
+    Bun is the JavaScript runtime that powers both the development workflow and the production server. The entire monorepo uses Bun as its package manager (`bun install`), test runner (`bun test`), and build tool (`bun build`).
+
+    Key reasons for choosing Bun:
+    - Significantly faster cold-start times than Node.js, which matters for a local-first tool
+    - Built-in test runner with no additional dependency
+    - Native TypeScript execution without a compilation step in development
+    - `bun build --compile` produces a self-contained binary that bundles the server, frontend assets, and default data into a single executable (~23 MB)
+
+    The required Bun version is pinned in `package.json` under `packageManager`. Use `bun --version` to verify you are on `1.2.x`.
+  </Accordion>
+
+  <Accordion title="TurboRepo — monorepo build orchestration">
+    TurboRepo orchestrates builds, type checks, and test runs across all packages and apps. It caches task outputs so that unchanged packages are not rebuilt on every run.
+
+    Useful commands:
+
+    ```bash
+    # Run all dev servers
+    bun run dev
+
+    # Type-check all packages
+    bun run check-types
+
+    # Build everything
+    bun run build
+
+    # Bypass cache when debugging build issues
+    TURBO_CACHE=0 bun run build
+    ```
+
+    `turbo.json` defines the task pipeline and is treated as a guarded file — changes to it affect the entire build system.
+  </Accordion>
+
+  <Accordion title="React 19 — frontend UI">
+    The frontend uses React 19, the latest major release. React 19 introduces improved support for concurrent rendering, better Suspense integration, and the new `use` API for reading promises and context in render.
+
+    The application is structured using **Feature-Sliced Design**: feature directories (`features/slideshow/`) co-locate components, hooks, queries, and state rather than separating them by technical type. This keeps feature code navigable as the application grows.
+
+    Components are built on **shadcn/ui** primitives (Radix UI), which live in `apps/web/src/components/ui`. These are unstyled accessible primitives that are styled with TailwindCSS.
+  </Accordion>
+
+  <Accordion title="TanStack Router — file-based routing">
+    TanStack Router provides type-safe, file-based routing for the React app. Routes are defined in `apps/web/src/routes/` and the route tree is automatically generated into `src/routeTree.gen.ts`.
+
+    Key properties:
+    - Fully type-safe route params and search params — no casting required
+    - Code splitting support via `.lazy.tsx` files
+    - URL state management as a first-class citizen (search parameters are typed)
+    - `__root.tsx` defines the root layout and context available to all routes
+
+    <Note>
+      Never edit `routeTree.gen.ts` by hand. It is regenerated on every build.
+    </Note>
+  </Accordion>
+
+  <Accordion title="TanStack Query — server state management">
+    TanStack Query manages all server state: data fetching, caching, background revalidation, and mutation lifecycle. The ORPC client integrates with TanStack Query to expose typed hooks directly from procedure names.
+
+    ```typescript
+    // Query (read)
+    const { data } = orpc.slideshowLoad.useQuery({ slideshowId: "default" });
+
+    // Mutation (write)
+    const mutation = orpc.slideshowAssistant.useMutation();
+    mutation.mutate({ prompt: "Add a summary slide", currentSlideshow: data });
+    ```
+
+    There is no global state library (no Redux, no Zustand for server state). Complex local UI state (current slide index, active panel) lives in custom React hooks within each feature.
+  </Accordion>
+
+  <Accordion title="Elysia — backend web framework">
+    Elysia is a high-performance web framework purpose-built for Bun. The server app (`apps/server`) uses Elysia solely as a host for the ORPC handler — all business logic lives in `packages/api` and `packages/core`.
+
+    The server entry point is intentionally minimal:
+    - Read validated environment variables from `@slides/config/server`
+    - Create a filesystem adapter for slideshow persistence
+    - Mount the ORPC router on Elysia at `/rpc`
+    - Configure CORS using `CORS_ORIGIN` from env
+
+    Elysia was chosen over alternatives (Hono, Fastify) for its exceptional throughput on Bun and first-class TypeScript support.
+  </Accordion>
+
+  <Accordion title="ORPC — end-to-end type-safe RPC">
+    ORPC (Open RPC) is the typed communication layer between frontend and backend. Procedures are defined in `packages/api/src/slideshow/contracts.ts` and shared with the frontend as the `AppRouter` type.
+
+    What this means in practice:
+    - No code generation step — types are shared directly via the TypeScript module system
+    - Changing a procedure's input or output schema immediately produces compile errors in frontend consumers
+    - ORPC automatically generates an OpenAPI specification, available at `/api-reference`
+    - Works over standard HTTP — no WebSocket or special protocol required
+
+    The pattern for defining a procedure:
+
+    ```typescript
+    // 1. Define schema (packages/api/src/slideshow/schemas.ts)
+    export const AssistantRequestSchema = Type.Object({
+      slideshowId: Type.String(),
+      prompt: Type.String(),
+      currentSlideshow: SlideshowSchema,
+    });
+
+    // 2. Declare contract (packages/api/src/slideshow/contracts.ts)
+    export const slideshowContracts = {
+      slideshowAssistant: publicProcedure
+        .input(Zod(AssistantRequestSchema))
+        .output(Zod(AssistantResponseSchema))
+        .errors(slideshowAssistantErrors),
+    };
+
+    // 3. Wire router (packages/api/src/routers/slideshow.ts)
+    export const slideshowRouter = {
+      slideshowAssistant: slideshowContracts.slideshowAssistant.handler(
+        async ({ input, context, errors }) => {
+          return handleSlideshowAssistant(input, context.anthropic, errors);
+        }
+      ),
+    };
+    ```
+  </Accordion>
+
+  <Accordion title="TypeBox + Zod — schema validation">
+    Two validation libraries are used, each in a distinct role:
+
+    **TypeBox** is the source of truth for all schema definitions. It is used in `packages/core/src/schema/` for domain schemas (slideshow structures, block types, layouts) and in `packages/api/src/slideshow/schemas.ts` for endpoint input/output shapes. TypeBox schemas are high-performance — they compile to JSON Schema and run validation with no interpreter overhead.
+
+    **Zod** is used at the ORPC contract boundary only. ORPC requires Zod schemas, so TypeBox schemas are converted using `@sinclair/typemap`'s `Zod()` utility:
+
+    ```typescript
+    import { Zod } from "@sinclair/typemap";
+    import { AssistantRequestSchema } from "./schemas"; // TypeBox schema
+
+    publicProcedure.input(Zod(AssistantRequestSchema))  // Converted to Zod
+    ```
+
+    This keeps a single schema definition as the source of truth while satisfying ORPC's Zod requirement.
+  </Accordion>
+
+  <Accordion title="TailwindCSS v4 — styling">
+    All styling in the frontend uses TailwindCSS v4. Version 4 introduced a new CSS-first configuration format (replacing `tailwind.config.js`) and significantly improved build performance.
+
+    Shared component primitives are sourced from **shadcn/ui** — accessible, unstyled Radix UI components that are copied into the project and styled with Tailwind utility classes. These live in `apps/web/src/components/ui`.
+  </Accordion>
+
+  <Accordion title="Anthropic Claude — AI assistant">
+    The AI assistant uses Anthropic's Claude models via the Anthropic API. Claude receives the current slideshow as structured context alongside a system prompt (defined in `packages/core/src/prompts.ts`) that instructs it on the slideshow data model and the expected JSON Patch output format.
+
+    Integration details:
+    - The Anthropic API key is server-side only, held in `ANTHROPIC_API_KEY` env var
+    - The model and token limits are configurable via `ANTHROPIC_MODEL` and `ANTHROPIC_MAX_TOKENS` env vars
+    - All AI calls are made in `packages/api/src/slideshow/assistant-service.ts`
+    - The frontend never communicates with Anthropic directly — all AI requests go through the typed ORPC endpoint
+
+    If `ANTHROPIC_API_KEY` is not set, AI features fail gracefully (the key is typed as `apiKey?: string` in `AnthropicConfig`). All other features remain functional.
+
+    See the [data flow](/architecture/data-flow) page for the complete AI assistant request cycle.
+  </Accordion>
+</AccordionGroup>

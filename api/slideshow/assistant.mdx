@@ -1,0 +1,232 @@
+---
+title: "slideshowAssistant"
+description: "Send a natural language request to the AI assistant to modify the current slideshow."
+---
+
+The `slideshowAssistant` procedure sends a user message to the Anthropic Claude API and returns a structured patch result that describes the changes the assistant wants to make to the current slideshow or slide.
+
+The assistant does not mutate data directly — it returns a `patchResult` that your application applies to the local state.
+
+<Warning>
+  This procedure requires a valid Anthropic API key configured on the server via the `ANTHROPIC_API_KEY` environment variable. If the key is missing, the procedure returns an `API_KEY_MISSING` error.
+</Warning>
+
+## Request
+
+`POST /rpc/slideshowAssistant`
+
+### Input
+
+<ParamField body="slideshows" type="Slideshow[]" required>
+  All current slideshows. The assistant uses this to understand the full context of the presentation. See the [Slideshow type reference](/api/types/slideshow).
+</ParamField>
+
+<ParamField body="currentSlideshowIndex" type="integer" required>
+  Zero-based index of the active slideshow within the `slideshows` array. The assistant focuses its changes on this slideshow.
+</ParamField>
+
+<ParamField body="currentSlide" type="integer" required>
+  Zero-based index of the active slide within the current slideshow's `slides` array. Used to target slide-level edits.
+</ParamField>
+
+<ParamField body="userInput" type="string" required>
+  The natural language request from the user. For example: `"Add a KPI block showing revenue of $2.4M"` or `"Rewrite the explainer to be more concise"`.
+</ParamField>
+
+<ParamField body="previousMessages" type="AssistantConversationMessage[]">
+  Optional conversation history for multi-turn interactions. Each message has a `role` (`"user"`, `"assistant"`, or `"system"`) and a `content` string.
+
+  Pass the messages from previous turns to maintain context across multiple requests. The current `userInput` is automatically appended — do not include it here.
+</ParamField>
+
+<ParamField body="useFullContext" type="boolean" required>
+  Controls how much of the slideshow is sent to the AI model:
+
+  - `true` — sends the full slideshow (all slides and concepts) as context. Use this for structural changes, adding new slides, or requests that reference multiple slides.
+  - `false` — sends only the current slide. Use this for targeted edits to a single slide. Results in lower token usage and faster responses.
+</ParamField>
+
+## Response
+
+<ResponseField name="assistantText" type="string" required>
+  The raw text response from the AI model, including any reasoning or explanation the assistant provided alongside the patch.
+</ResponseField>
+
+<ResponseField name="wasTruncated" type="boolean" required>
+  `true` if the model's response was cut off because it hit the `max_tokens` limit. If truncated, the `patchResult` may be incomplete or invalid.
+</ResponseField>
+
+<ResponseField name="digest" type="object" required>
+  A snapshot of the slideshow state at the time the request was processed. Used to detect drift when applying the returned patch.
+
+  <Expandable title="digest properties">
+    <ResponseField name="slideshowId" type="string | null" required>
+      The ID of the current slideshow, or `null` if not set.
+    </ResponseField>
+    <ResponseField name="slideshowTitle" type="string | null" required>
+      The title of the current slideshow, or `null` if not set.
+    </ResponseField>
+    <ResponseField name="slideCount" type="integer" required>
+      Total number of slides in the current slideshow.
+    </ResponseField>
+    <ResponseField name="slideIds" type="(string | null)[]" required>
+      Array of slide IDs in order, with `null` for slides without an ID.
+    </ResponseField>
+    <ResponseField name="conceptKeys" type="string[]" required>
+      Array of concept keys defined in the slideshow.
+    </ResponseField>
+    <ResponseField name="currentSlideIndex" type="integer" required>
+      Zero-based index of the active slide.
+    </ResponseField>
+    <ResponseField name="currentSlideId" type="string | null" required>
+      ID of the active slide, or `null`.
+    </ResponseField>
+    <ResponseField name="currentSlideOrder" type="integer | null" required>
+      The `order` value of the active slide, or `null`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="patchResult" type="object" required>
+  The outcome of the assistant's attempt to generate a patch. This is a discriminated union with three possible statuses.
+
+  <Expandable title="patchResult variants">
+    <ResponseField name="status" type="ok | invalid | noop" required>
+      - `"ok"` — a valid patch was generated and is ready to apply.
+      - `"invalid"` — a patch was generated but failed validation.
+      - `"noop"` — the assistant determined no change was needed, or could not locate the target.
+    </ResponseField>
+
+    **When `status` is `"ok"`:**
+
+    <ResponseField name="transaction" type="object">
+      The validated patch transaction, ready to apply.
+      <Expandable title="transaction properties">
+        <ResponseField name="id" type="string">Unique transaction ID.</ResponseField>
+        <ResponseField name="patch" type="unknown[]">The JSON Patch operations array.</ResponseField>
+        <ResponseField name="scope" type="object">Target scope: `{ type: "slideshow" | "slide", slideIndex: number }`.</ResponseField>
+        <ResponseField name="baseDigest" type="object">The digest the patch was generated against.</ResponseField>
+        <ResponseField name="originalUserRequest" type="string">The original user message.</ResponseField>
+        <ResponseField name="createdAt" type="integer">Unix timestamp (ms) when the transaction was created.</ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="scope" type="object">The scope the patch targets.</ResponseField>
+    <ResponseField name="patch" type="unknown[]">The raw patch operations.</ResponseField>
+
+    **When `status` is `"invalid"`:**
+
+    <ResponseField name="errors" type="unknown[]">Validation errors describing why the patch was rejected.</ResponseField>
+    <ResponseField name="patch" type="unknown[]">The raw patch that failed validation.</ResponseField>
+    <ResponseField name="phase" type="string">The validation phase where failure occurred.</ResponseField>
+
+    **When `status` is `"noop"`:**
+
+    <ResponseField name="reason" type="no-patch | missing-target">Why no change was made.</ResponseField>
+    <ResponseField name="scope" type="object">The scope that was targeted, if one was identified.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Errors
+
+| Code | Description |
+|------|-------------|
+| `API_KEY_MISSING` | No Anthropic API key is configured on the server. Set `ANTHROPIC_API_KEY` in the server environment. |
+| `ANTHROPIC_API_ERROR` | The Anthropic API returned an error. The error data includes `status` (HTTP status code) and `details`. |
+| `ANTHROPIC_RATE_LIMITED` | The Anthropic API rate limit was exceeded. The error data includes `retryAfter` (seconds until retry is allowed, if provided by Anthropic). |
+| `INVALID_RESPONSE` | The AI service returned a response with no text content. The error data includes `reason`. |
+| `PATCH_GENERATION_FAILED` | The assistant's response could not be turned into a valid patch result. The error data includes `reason`. |
+
+## Examples
+
+<CodeGroup>
+
+```typescript TypeScript
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { AppRouter } from "@slides/api";
+import type { AssistantConversationMessage } from "@slides/core";
+
+const client = createORPCClient<AppRouter>(
+  new RPCLink({ url: "http://localhost:3000/rpc" })
+);
+
+// First turn — single request with full context
+const response = await client.slideshowAssistant({
+  slideshows: currentSlideshows,
+  currentSlideshowIndex: 0,
+  currentSlide: 2,
+  userInput: "Add a KPI showing monthly active users of 84,000",
+  useFullContext: false, // editing only this slide
+});
+
+if (response.patchResult.status === "ok") {
+  // Apply the patch to local state
+  applyPatch(currentSlideshows, response.patchResult.transaction);
+}
+
+// Multi-turn — pass conversation history for follow-up requests
+const history: AssistantConversationMessage[] = [
+  { role: "user", content: "Add a KPI showing monthly active users of 84,000" },
+  { role: "assistant", content: response.assistantText },
+];
+
+const followUp = await client.slideshowAssistant({
+  slideshows: currentSlideshows,
+  currentSlideshowIndex: 0,
+  currentSlide: 2,
+  userInput: "Change the label to \"MAU\" and add a +12% month-over-month change",
+  previousMessages: history,
+  useFullContext: false,
+});
+```
+
+```bash cURL
+curl -X POST http://localhost:3000/rpc/slideshowAssistant \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slideshows": [{
+      "title": "Product Metrics",
+      "concepts": {
+        "growth": { "label": "Growth", "color": "green" }
+      },
+      "slides": [{
+        "order": 1,
+        "concept": "growth",
+        "blocks": [
+          { "explainer": { "content": "Current metrics overview." } }
+        ]
+      }]
+    }],
+    "currentSlideshowIndex": 0,
+    "currentSlide": 0,
+    "userInput": "Add a KPI block showing revenue of $2.4M",
+    "useFullContext": false
+  }'
+```
+
+</CodeGroup>
+
+## Best practices
+
+**Choosing `useFullContext`**
+
+Use `useFullContext: false` (current slide only) when:
+- Editing content on a single slide (adding blocks, rewording text)
+- Making targeted style or data changes
+- You want faster responses and lower token consumption
+
+Use `useFullContext: true` (full slideshow) when:
+- Adding a new slide or reordering slides
+- Asking the assistant to maintain consistency across slides (e.g., matching a concept)
+- The request references other slides (e.g., "make this slide consistent with slide 3")
+
+**Managing conversation history**
+
+Pass `previousMessages` to give the assistant context from prior turns. Build the array by alternating `user` and `assistant` messages, where each `assistant` entry is the `assistantText` from the prior response. This keeps the conversation coherent for multi-step editing sessions.
+
+**Handling `patchResult` statuses**
+
+Always check `patchResult.status` before attempting to apply changes:
+- `"ok"` — apply the `transaction` to your state
+- `"invalid"` — show the user an error; log `errors` for debugging
+- `"noop"` — inform the user the assistant made no changes (and optionally why)

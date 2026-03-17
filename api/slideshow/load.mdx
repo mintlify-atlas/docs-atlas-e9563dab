@@ -1,0 +1,130 @@
+---
+title: "slideshowLoad"
+description: "Load slideshows from the filesystem, optionally filtered by dataset ID."
+---
+
+The `slideshowLoad` procedure reads slideshow data from the filesystem and returns an array of validated `Slideshow` objects along with provenance metadata describing where each slideshow came from.
+
+## Request
+
+`POST /rpc/slideshowLoad`
+
+### Input
+
+<ParamField body="datasetId" type="string">
+  The dataset to load. When omitted, the server loads the `default` dataset. When provided, it loads the named dataset from the filesystem.
+
+  A dataset corresponds to a directory or file grouping on disk. Pass `"default"` to load the default dataset, or any other string identifier for a named dataset.
+</ParamField>
+
+## Response
+
+<ResponseField name="slideshows" type="Slideshow[]" required>
+  An array of fully validated slideshow objects. See the [Slideshow type reference](/api/types/slideshow) for the complete shape.
+</ResponseField>
+
+<ResponseField name="provenance" type="object" required>
+  A map of slideshow index (as a string key) to provenance metadata. Each entry describes where the corresponding slideshow was loaded from.
+
+  <Expandable title="provenance entry properties">
+    <ResponseField name="[index].sourceType" type="string" required>
+      Where the slideshow came from. One of: `"fs"`, `"db"`, `"remote"`, `"gist"`, `"manual"`.
+
+      Currently only `"fs"` (filesystem) is implemented.
+    </ResponseField>
+    <ResponseField name="[index].sourceId" type="string" required>
+      An identifier for the source — for filesystem sources, this is the file path.
+    </ResponseField>
+    <ResponseField name="[index].writable" type="boolean" required>
+      Whether the slideshow can be saved back to its source. If `false`, calls to `slideshowSave` targeting this dataset may fail.
+    </ResponseField>
+    <ResponseField name="[index].targetId" type="string | null" required>
+      Where to write on save. `null` if the source is read-only or no target has been configured.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+<CodeGroup>
+
+```typescript TypeScript
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { AppRouter } from "@slides/api";
+
+const client = createORPCClient<AppRouter>(
+  new RPCLink({ url: "http://localhost:3000/rpc" })
+);
+
+// Load the default dataset
+const defaultResult = await client.slideshowLoad({});
+console.log(defaultResult.slideshows.length); // number of slideshows
+
+// Load a named dataset
+const namedResult = await client.slideshowLoad({
+  datasetId: "q4-roadmap",
+});
+
+// Inspect provenance for the first slideshow
+const firstProvenance = namedResult.provenance["0"];
+console.log(firstProvenance.sourceId);  // e.g. "/data/q4-roadmap.json"
+console.log(firstProvenance.writable);  // true if saveable
+```
+
+```bash cURL
+# Load the default dataset
+curl -X POST http://localhost:3000/rpc/slideshowLoad \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Load a named dataset
+curl -X POST http://localhost:3000/rpc/slideshowLoad \
+  -H "Content-Type: application/json" \
+  -d '{"datasetId": "q4-roadmap"}'
+```
+
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "slideshows": [
+    {
+      "id": "sw_01",
+      "title": "Q4 Roadmap",
+      "concepts": {
+        "infra": { "label": "Infrastructure", "color": "blue" },
+        "product": { "label": "Product", "color": "purple" }
+      },
+      "slides": [
+        {
+          "id": "sl_01",
+          "order": 1,
+          "concept": "infra",
+          "blocks": [
+            {
+              "explainer": {
+                "content": "We are migrating to a multi-region deployment in Q4."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "0": {
+      "sourceType": "fs",
+      "sourceId": "/data/q4-roadmap.json",
+      "writable": true,
+      "targetId": "/data/q4-roadmap.json"
+    }
+  }
+}
+```
+
+<Note>
+  Provenance is computed at load time and is never stored in the JSON files on disk. It is only present in the API response.
+</Note>

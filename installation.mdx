@@ -1,0 +1,218 @@
+---
+title: "Installation"
+description: "Detailed setup instructions for development mode and the standalone binary."
+---
+
+## System requirements
+
+| Requirement | Version |
+|-------------|--------|
+| Bun | 1.2.x (pinned via `packageManager`) |
+| Node.js | 20+ (recommended for tooling compatibility) |
+| Operating system | macOS, Linux, or Windows |
+
+<Warning>
+  The monorepo pins Bun to `1.2.x`. Running a different major version may cause lockfile or runtime incompatibilities. Check your version with `bun --version` before installing.
+</Warning>
+
+## Installation paths
+
+<Tabs>
+  <Tab title="Development mode">
+    Development mode runs the full monorepo with hot reload. This is the recommended path for contributing to Slides or building on top of the source.
+
+    **1. Clone the repository**
+
+    ```bash
+    git clone https://github.com/rawr-ai/slides.git
+    cd slides
+    ```
+
+    **2. Install dependencies**
+
+    ```bash
+    bun install
+    ```
+
+    Bun workspaces install dependencies for all apps (`apps/web`, `apps/server`) and packages (`packages/api`, `packages/core`, `packages/config`) in one step.
+
+    **3. Configure environment variables**
+
+    ```bash
+    cp apps/server/.env.example apps/server/.env
+    cp apps/web/.env.example apps/web/.env
+    ```
+
+    Edit `apps/server/.env` to set your Anthropic API key and any other values. See the [Environment variables](#environment-variables) section below for the full reference.
+
+    **4. Start the dev servers**
+
+    <CodeGroup>
+
+    ```bash All apps
+    bun run dev
+    ```
+
+    ```bash Web only
+    bun run dev:web
+    ```
+
+    ```bash Server only
+    bun run dev:server
+    ```
+
+    </CodeGroup>
+
+    The frontend runs at [http://localhost:3001](http://localhost:3001) and the backend at [http://localhost:3000](http://localhost:3000).
+  </Tab>
+
+  <Tab title="Standalone binary">
+    The standalone binary bundles the server and all web assets into a single self-contained executable. No Node.js, Bun, or npm is required at runtime.
+
+    **From a pre-built archive**
+
+    Download the release archive for your platform, then:
+
+    ```bash
+    tar -xzf slides.tar.gz
+    cd slides
+    ```
+
+    Run with default settings:
+
+    ```bash
+    ./slides --port 4000
+    ```
+
+    Run with a custom slideshow directory and AI features enabled:
+
+    ```bash
+    ./slides --data-dir /path/to/slideshows --api-key sk-ant-... --port 4000
+    ```
+
+    Open the browser automatically on start:
+
+    ```bash
+    ./slides --port 4000 --open
+    ```
+
+    **One-time init (optional)**
+
+    Run `--init` to save your preferred defaults to `~/.config/slides/config.json` and optionally install a `slides` launcher into your `PATH`:
+
+    ```bash
+    ./slides --init --data-dir /path/to/slideshows --port 4000 --api-key sk-ant-...
+    ```
+
+    After init, if the launcher was installed, you can run `slides` from anywhere.
+
+    **Building the binary from source**
+
+    ```bash
+    git clone https://github.com/rawr-ai/slides.git
+    cd slides
+    bun install
+    cd apps/server
+    bun run compile:standalone
+    ```
+
+    The output is written to `apps/server/dist-standalone/slides.tar.gz` (~23 MB). On Windows the archive is `slides.zip`.
+
+    **CLI options reference**
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--port <n>` | Server port | `3000` |
+    | `--data-dir <path>` | Directory for slideshow JSON files | `./data/slideshows` |
+    | `--api-key <key>` | Anthropic API key for AI features | (none) |
+    | `--open` | Open browser on start | `false` |
+    | `--init` | Save defaults to config and install launcher | — |
+    | `--install-path <path>` | Custom directory for the launcher symlink | auto-detected |
+    | `--help` | Show help text | — |
+
+    **Directory structure**
+
+    ```
+    slides/
+    ├── slides               # Executable binary
+    ├── web/                 # Bundled web assets (must stay colocated)
+    └── data/slideshows/     # Default slideshow JSON files
+        └── default.json
+    ```
+
+    <Note>
+      Saved defaults live in `~/.config/slides/config.json` (or `%APPDATA%\slides\config.json` on Windows). Flags passed at runtime always take precedence over saved config.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Environment variables
+
+### Server (`apps/server/.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PORT` | No | `3000` | Port the server listens on |
+| `CORS_ORIGIN` | No | `http://localhost:3001` | Allowed origin for CORS requests |
+| `DATA_DIR` | No | `./data/slideshows` | Directory from which slideshow JSON files are loaded |
+| `ANTHROPIC_API_KEY` | **Yes** (for AI) | — | Anthropic API key. Required for AI assistant features |
+| `ANTHROPIC_MODEL` | No | `claude-sonnet-4-20250514` | Anthropic model identifier |
+| `ANTHROPIC_MAX_TOKENS` | No | `16384` | Maximum tokens per AI response |
+| `BETTER_AUTH_SECRET` | No | — | Auth secret (feature not yet implemented) |
+| `BETTER_AUTH_URL` | No | — | Auth URL (feature not yet implemented) |
+
+### Web (`apps/web/.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `VITE_SERVER_URL` | No | `http://localhost:3000` | URL of the backend server. Must be a `VITE_` prefixed variable to be accessible in the browser |
+
+<Warning>
+  Never expose `ANTHROPIC_API_KEY` or other server secrets in the web app environment. Frontend variables must use the `VITE_` prefix; all other vars remain server-side only.
+</Warning>
+
+## Running tests
+
+```bash
+bun test
+```
+
+To filter tests to a specific path or pattern:
+
+```bash
+bun test --filter <path|pattern>
+```
+
+For example, to run only tests in the `packages/core` package:
+
+```bash
+bun test --filter packages/core
+```
+
+## Building
+
+```bash
+bun run build
+```
+
+This runs the full TurboRepo build pipeline across all apps and packages. To force a clean build and bypass the Turbo cache:
+
+```bash
+TURBO_CACHE=0 bun run build
+```
+
+## Type checking
+
+```bash
+bun run check-types
+```
+
+To isolate type errors to a single package (for example, `@slides/core`):
+
+```bash
+bun run check-types --filter @slides/core
+```
+
+<Tip>
+  Run `bun run check-types`, `bun run build`, and `bun test` before opening a pull request. These three commands are the local gate for CI.
+</Tip>

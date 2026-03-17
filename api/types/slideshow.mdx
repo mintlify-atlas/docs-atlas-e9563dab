@@ -1,0 +1,125 @@
+---
+title: "Slideshow"
+description: "The top-level Slideshow type: title, concepts, and an ordered array of slides."
+---
+
+A `Slideshow` is the root data object in the Slides API. It contains a title, a concepts map for categorizing slides, and an array of at least one slide.
+
+## TypeScript definition
+
+```typescript
+import type { Slideshow, ConceptsMap, Concept, ConceptColor } from "@slides/core";
+
+type ConceptColor = "default" | "blue" | "purple" | "green" | "orange" | "rose";
+
+type Concept = {
+  label: string;           // required, min 1 char
+  description?: string;
+  color?: ConceptColor;
+};
+
+type ConceptsMap = Record<string, Concept>;
+
+type Slideshow = {
+  id?: string;
+  title: string;           // required, min 1 char
+  concepts: ConceptsMap;   // required
+  slides: Slide[];         // required, min 1 item
+};
+```
+
+## Fields
+
+<ResponseField name="id" type="string">
+  An optional identifier for the slideshow. Not required — the server can load and save slideshows without IDs. When present, it is used in digest calculations and logging.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  The display title of the slideshow. Must be at least one character.
+</ResponseField>
+
+<ResponseField name="concepts" type="object" required>
+  A map of concept keys to `Concept` objects. Each key is an arbitrary string used to categorize slides. The keys defined here are referenced by `slide.concept` on each slide.
+
+  <Expandable title="Concept properties">
+    <ResponseField name="label" type="string" required>
+      The human-readable name for this concept. Displayed in the UI when browsing slides by concept.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      An optional longer description of the concept.
+    </ResponseField>
+    <ResponseField name="color" type="string">
+      An optional color to use when rendering concept badges. One of: `"default"`, `"blue"`, `"purple"`, `"green"`, `"orange"`, `"rose"`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="slides" type="Slide[]" required>
+  An ordered array of slides. Must contain at least one slide. See the [Slide type reference](/api/types/slide) for the complete shape of each slide.
+</ResponseField>
+
+## JSON example
+
+```json
+{
+  "id": "sw_q4_roadmap",
+  "title": "Q4 Roadmap",
+  "concepts": {
+    "infra": {
+      "label": "Infrastructure",
+      "description": "Platform and reliability work",
+      "color": "blue"
+    },
+    "product": {
+      "label": "Product",
+      "description": "Customer-facing features",
+      "color": "purple"
+    },
+    "growth": {
+      "label": "Growth",
+      "color": "green"
+    }
+  },
+  "slides": [
+    {
+      "id": "sl_01",
+      "order": 1,
+      "concept": "product",
+      "explanation": "Overview of Q4 priorities",
+      "blocks": [
+        {
+          "explainer": {
+            "content": "In Q4 we are shipping three major features: collaborative editing, export to PDF, and AI-assisted slide generation."
+          }
+        }
+      ]
+    },
+    {
+      "id": "sl_02",
+      "order": 2,
+      "concept": "growth",
+      "blocks": [
+        {
+          "kpi": {
+            "label": "Monthly Active Users",
+            "value": 84000,
+            "change": 12,
+            "changeType": "percent",
+            "status": "positive"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Concepts map
+
+The `concepts` object acts as a lookup table for categorizing slides. Every slide references one concept key via its `concept` field. This allows the UI to group, filter, and color-code slides by category.
+
+Concept keys are arbitrary strings — use values that are meaningful to your content (e.g., `"infra"`, `"product"`, `"growth"`). The key must match exactly what each slide's `concept` field contains.
+
+<Tip>
+  Define concepts before creating slides that reference them. The AI assistant validates that each slide's `concept` value exists in the concepts map.
+</Tip>

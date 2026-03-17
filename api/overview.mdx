@@ -1,0 +1,107 @@
+---
+title: "API reference overview"
+description: "How to call the Slides API using ORPC over HTTP."
+---
+
+The Slides API is built on [ORPC](https://orpc.dev), a TypeScript-native RPC framework. All procedures are served over a single HTTP endpoint using `POST /rpc`. There is no REST routing — every call goes to the same URL with the procedure name encoded in the request.
+
+## Base URL
+
+```
+http://localhost:3000
+```
+
+The server runs locally. No authentication is required — Slides is a local-first application.
+
+## Available procedures
+
+| Procedure | Description |
+|-----------|-------------|
+| `slideshowLoad` | Load slideshows from the filesystem, optionally filtered by dataset ID |
+| `slideshowSave` | Save slideshows back to the filesystem with optional staleness protection |
+| `slideshowAssistant` | Send a natural language request to the AI assistant to modify slides |
+
+## Calling the API
+
+You can call procedures in two ways: using the typed ORPC client (recommended for TypeScript projects), or via raw HTTP.
+
+### TypeScript client
+
+Import the `AppRouter` type from `@slides/api` to get full end-to-end type safety. You never need to write the procedure name as a string — the client infers it from the type.
+
+```typescript
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { AppRouter } from "@slides/api";
+
+const client = createORPCClient<AppRouter>(
+  new RPCLink({
+    url: "http://localhost:3000/rpc",
+  })
+);
+
+// Load all slideshows
+const { slideshows, provenance } = await client.slideshowLoad({
+  datasetId: "my-project",
+});
+
+// Save updated slideshows
+const result = await client.slideshowSave({
+  datasetId: "my-project",
+  slideshows,
+});
+
+console.log(result.digest); // use for next staleness check
+```
+
+### Raw HTTP
+
+Every procedure is a `POST` request to `/rpc/{procedureName}` with a JSON body.
+
+```bash
+curl -X POST http://localhost:3000/rpc/slideshowLoad \
+  -H "Content-Type: application/json" \
+  -d '{"datasetId": "my-project"}'
+```
+
+<Note>
+The ORPC wire format wraps the input in a JSON object. The `input` key is not required for raw HTTP — post the input fields directly as the JSON body.
+</Note>
+
+## OpenAPI specification
+
+ORPC auto-generates an OpenAPI 3.x specification from the procedure contracts. You can access it at:
+
+```
+http://localhost:3000/api-reference
+```
+
+This endpoint returns a valid OpenAPI document you can import into tools like Postman, Insomnia, or Swagger UI.
+
+## Procedure reference
+
+<CardGroup cols={3}>
+  <Card title="slideshowLoad" icon="download" href="/api/slideshow/load">
+    Load slideshows from the filesystem.
+  </Card>
+  <Card title="slideshowSave" icon="floppy-disk" href="/api/slideshow/save">
+    Save slideshows back to the filesystem.
+  </Card>
+  <Card title="slideshowAssistant" icon="sparkles" href="/api/slideshow/assistant">
+    Send a natural language request to the AI assistant.
+  </Card>
+</CardGroup>
+
+## Type reference
+
+<CardGroup cols={3}>
+  <Card title="Slideshow" icon="presentation" href="/api/types/slideshow">
+    The top-level slideshow object with title, concepts, and slides.
+  </Card>
+  <Card title="Slide" icon="rectangle" href="/api/types/slide">
+    A single slide with ordered blocks and a concept reference.
+  </Card>
+  <Card title="Blocks" icon="squares" href="/api/types/blocks">
+    All 13 content block types that can appear on a slide.
+  </Card>
+</CardGroup>

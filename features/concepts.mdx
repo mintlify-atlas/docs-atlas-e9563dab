@@ -1,0 +1,168 @@
+---
+title: "Concepts"
+description: "Concepts are named, color-coded categories that organize slides within a slideshow. Every slide is assigned to exactly one concept."
+---
+
+A **concept** is a named category with an optional description and color. Every slideshow has a `concepts` map, and every slide references one concept by key. Concepts give you a way to group slides thematically and make large slideshows easier to navigate.
+
+## Concept schema
+
+```typescript
+type Concept = {
+  label: string;        // required, min 1 char — display name
+  description?: string; // optional — shown in tooltips or concept pickers
+  color?: ConceptColor; // optional — color token for visual coding
+};
+
+type ConceptColor =
+  | "default"
+  | "blue"
+  | "purple"
+  | "green"
+  | "orange"
+  | "rose";
+```
+
+The `ConceptsMap` is a plain `Record<string, Concept>` — the keys are the identifiers referenced by slides:
+
+```typescript
+type ConceptsMap = Record<string, Concept>;
+```
+
+## ConceptsMap in a slideshow
+
+The `concepts` field lives at the top level of a `Slideshow`. The map keys are arbitrary strings — use short, descriptive identifiers.
+
+```json
+{
+  "id": "ss-example",
+  "title": "Product Roadmap",
+  "concepts": {
+    "vision": {
+      "label": "Vision",
+      "description": "High-level direction and goals",
+      "color": "purple"
+    },
+    "execution": {
+      "label": "Execution",
+      "description": "Delivery milestones and tracking",
+      "color": "blue"
+    },
+    "metrics": {
+      "label": "Metrics",
+      "description": "KPIs and performance data",
+      "color": "green"
+    }
+  },
+  "slides": [
+    {
+      "order": 1,
+      "concept": "vision",
+      "blocks": [{ "explainer": { "content": "Where we're going" } }]
+    },
+    {
+      "order": 2,
+      "concept": "execution",
+      "blocks": [{ "gantt": { "content": "gantt\n  title Q4 Plan\n  ..." } }]
+    },
+    {
+      "order": 3,
+      "concept": "metrics",
+      "blocks": [{ "kpiGrid": { "layout": "uniform", "items": [] } }]
+    }
+  ]
+}
+```
+
+## How concepts relate to slides
+
+Each `Slide` has a `concept` field that holds the key of one entry in the slideshow's `concepts` map:
+
+```typescript
+type Slide = {
+  id?: string;
+  order: number;   // 1-based
+  concept: string; // must match a key in slideshow.concepts
+  explanation?: string;
+  blocks: Block[]; // min 1
+};
+```
+
+<Warning>
+The `concept` value on a slide must match an existing key in the `concepts` map. The validator rejects slides that reference a concept key that does not exist in the map. When the AI assistant adds slides, it always picks from the available concept keys in the current slideshow.
+</Warning>
+
+## Valid colors
+
+The `ConceptColor` type restricts colors to six named tokens. These tokens map to theme-appropriate shades in the UI:
+
+<CardGroup cols={3}>
+  <Card title="default" icon="circle">
+    Neutral — no color emphasis. Used as the fallback when no color is set.
+  </Card>
+  <Card title="blue" icon="circle">
+    For technical, infrastructure, or engineering concepts.
+  </Card>
+  <Card title="purple" icon="circle">
+    For vision, strategy, or product concepts.
+  </Card>
+  <Card title="green" icon="circle">
+    For metrics, success, or growth-oriented concepts.
+  </Card>
+  <Card title="orange" icon="circle">
+    For risks, warnings, or action-required concepts.
+  </Card>
+  <Card title="rose" icon="circle">
+    For people, culture, or design concepts.
+  </Card>
+</CardGroup>
+
+## Color overrides in the editor
+
+The slide editor lets you override a concept's color at runtime without modifying the underlying JSON. These overrides are stored in `useSlideshowStore` and reset when you switch slideshows.
+
+```typescript
+// Get the effective color for a concept (override takes precedence):
+const getConceptColor = (conceptId: string) => {
+  if (conceptColors[conceptId]) {
+    return conceptColors[conceptId]; // runtime override
+  }
+  return slideshow.concepts?.[conceptId]?.color || "default";
+};
+```
+
+## Best practices for organizing slideshows
+
+<AccordionGroup>
+  <Accordion title="Keep concept counts small">
+    Aim for 3–6 concepts per slideshow. Fewer concepts make the color coding meaningful; more than 6 tends to blur distinctions and make the slide list harder to scan.
+  </Accordion>
+
+  <Accordion title="Match concepts to your narrative arc">
+    Structure concepts around the flow of your presentation. For example:
+    - A project update might use: `context`, `progress`, `risks`, `next-steps`.
+    - A technical deep-dive might use: `overview`, `architecture`, `implementation`, `benchmarks`.
+    - A sales deck might use: `problem`, `solution`, `proof`, `pricing`.
+  </Accordion>
+
+  <Accordion title="Use consistent concept keys across related slideshows">
+    If you maintain multiple slideshows on similar topics (e.g., monthly reports), using the same concept keys makes it easy to compare structures and share slides between files.
+  </Accordion>
+
+  <Accordion title="Choose colors for meaning, not decoration">
+    Assign colors that carry semantic weight. For example, always use `green` for metrics/outcomes and `orange` for risks. Consistency helps your audience quickly identify slide categories at a glance.
+  </Accordion>
+
+  <Accordion title="Let the AI assistant manage concept assignment">
+    When asking the assistant to add slides, it reads the existing `concepts` map and assigns each new slide to an appropriate concept automatically. You can correct assignments with a follow-up message: `"Move slide 3 to the metrics concept."`
+  </Accordion>
+</AccordionGroup>
+
+## Validation rules
+
+The schema enforces the following:
+
+- `concept.label` is required and must be at least 1 character.
+- `concept.color`, if provided, must be one of the six valid tokens (`default`, `blue`, `purple`, `green`, `orange`, `rose`).
+- `slide.concept` must be a non-empty string.
+- The validator checks that every `slide.concept` value references a key that exists in the slideshow's `concepts` map. Validation errors include the available concept keys so you can quickly identify the mismatch.

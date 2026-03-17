@@ -1,0 +1,150 @@
+---
+title: "CLI options"
+description: "Complete reference for all command-line flags accepted by the Slides standalone binary."
+---
+
+The `slides` binary accepts the following flags. Flags take precedence over environment variables, which in turn take precedence over values saved in `config.json`.
+
+## Flag reference
+
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--port <n>` | `-p` | Port to listen on | `3000` |
+| `--data-dir <path>` | `-d` | Directory containing slideshow JSON files | `./data/slideshows` |
+| `--api-key <key>` | `-k` | Anthropic API key for AI assistant features | (none) |
+| `--open` | `-o` | Open the browser automatically after the server starts | `false` |
+| `--init` | | Save current flags as defaults and attempt to install a launcher symlink | — |
+| `--install-path <path>` | | Custom directory for the launcher symlink (used with `--init`) | auto-detected |
+| `--version` | | Print the binary version and exit | — |
+| `--help` | | Print help text and exit | — |
+
+---
+
+## --port
+
+Sets the TCP port the server listens on. Valid values are `1`–`65535`.
+
+```bash
+./slides --port 8080
+./slides -p 8080
+```
+
+If the port is already in use, the server will fail to start. Free the port first or choose a different one.
+
+---
+
+## --data-dir
+
+Specifies the directory from which slideshow JSON files are loaded. The path is resolved to an absolute path at startup. If the directory does not exist, the server will fall back to the bundled `data/slideshows/` directory inside the extracted archive.
+
+```bash
+./slides --data-dir /home/you/presentations
+./slides -d ./my-slideshows
+```
+
+<Note>
+Images referenced by slideshows should be placed in an `img/` subdirectory inside the data directory. They are served at `/img/*`.
+</Note>
+
+---
+
+## --api-key
+
+Provides an Anthropic API key to enable the AI assistant. Without this flag (and without the `ANTHROPIC_API_KEY` environment variable), the server starts normally but AI features will be unavailable.
+
+```bash
+./slides --api-key sk-ant-xxx
+./slides -k sk-ant-xxx
+```
+
+<Warning>
+Avoid passing your API key as a shell argument in shared or logged environments — it may appear in process listings or shell history. Prefer setting `ANTHROPIC_API_KEY` as an environment variable or saving it via `--init` instead.
+</Warning>
+
+---
+
+## --open
+
+Opens the default browser to `http://localhost:<port>` immediately after the server starts. Uses `open` on macOS, `xdg-open` on Linux, and `cmd /c start` on Windows.
+
+```bash
+./slides --open
+./slides --port 4000 --open
+```
+
+---
+
+## --init
+
+Runs the one-time setup workflow:
+
+1. Saves the current resolved flags (`--port`, `--data-dir`, `--api-key`, `--open`) to `~/.config/slides/config.json` (or `%APPDATA%\slides\config.json` on Windows).
+2. On macOS and Linux, attempts to install a symlink named `slides` into a writable directory on your `PATH` (`/usr/local/bin`, `/opt/homebrew/bin`, or `~/.local/bin` — tried in that order). On Windows, prints instructions to add the extracted folder to `PATH` manually.
+
+After a successful init, you can invoke `slides` directly from any directory without specifying the full path.
+
+```bash
+# Save defaults with all options, then install launcher
+./slides --init --port 4000 --data-dir /path/to/slides --api-key sk-ant-xxx --open
+
+# Specify a custom install location for the launcher symlink
+./slides --init --install-path ~/.local/bin
+```
+
+To update saved defaults later, re-run `--init` with the new values or edit the config file directly. See [Configuration](/deployment/configuration) for the config file format.
+
+<Note>
+`--init` exits immediately after completing setup — it does not start the server.
+</Note>
+
+---
+
+## --install-path
+
+Overrides the directory used when `--init` installs the launcher symlink. Has no effect if `--init` is not also provided.
+
+```bash
+./slides --init --install-path /opt/local/bin
+./slides --init --install-path ~/.local/bin
+```
+
+---
+
+## Usage examples
+
+<CodeGroup>
+
+```bash Start with defaults
+./slides
+```
+
+```bash Custom port with browser open
+./slides --port 8080 --open
+```
+
+```bash Custom data directory and port
+./slides --data-dir /var/data/presentations --port 4000
+```
+
+```bash Enable AI assistant
+./slides --api-key sk-ant-xxx --port 4000 --open
+```
+
+```bash One-time init (save defaults + install launcher)
+./slides --init --data-dir ~/slideshows --port 4000 --api-key sk-ant-xxx
+```
+
+```bash After init: run from anywhere
+slides
+```
+
+</CodeGroup>
+
+## Flag precedence
+
+When the same setting is configured in multiple places, the order of precedence from highest to lowest is:
+
+1. **CLI flags** passed at invocation time
+2. **Environment variables** (`PORT`, `DATA_DIR`, `ANTHROPIC_API_KEY`)
+3. **Saved config** (`~/.config/slides/config.json`)
+4. **Built-in defaults** (port `3000`, `./data/slideshows`)

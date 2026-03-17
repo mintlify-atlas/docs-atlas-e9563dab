@@ -1,0 +1,125 @@
+---
+title: "slideshowSave"
+description: "Save slideshows to the filesystem with optional optimistic concurrency protection."
+---
+
+The `slideshowSave` procedure writes a full array of `Slideshow` objects to the filesystem under the given dataset ID. It returns the new digest of the saved state, which you can use to detect staleness on the next save.
+
+## Request
+
+`POST /rpc/slideshowSave`
+
+### Input
+
+<ParamField body="datasetId" type="string" required>
+  The dataset to write to. Must be a non-empty string and must not be `"all"`. This identifies the file or directory on disk where the slideshows will be persisted.
+</ParamField>
+
+<ParamField body="slideshows" type="Slideshow[]" required>
+  The full array of slideshows to save. The entire array is written atomically — partial updates are not supported. See the [Slideshow type reference](/api/types/slideshow) for the complete shape.
+</ParamField>
+
+<ParamField body="expectedDigest" type="string">
+  An optional staleness guard. If provided, the server compares this value against the current on-disk digest before writing. If they differ — meaning another write happened since you last loaded — the save may be rejected.
+
+  Pass the `digest` value returned by a previous `slideshowLoad` or `slideshowSave` call to enable this check. Omit it to skip staleness detection and always overwrite.
+</ParamField>
+
+## Response
+
+<ResponseField name="success" type="true" required>
+  Always `true` on a successful save. Errors are returned as ORPC error responses, not as `success: false`.
+</ResponseField>
+
+<ResponseField name="digest" type="string" required>
+  A content-based digest of the saved state. Store this value and pass it as `expectedDigest` on the next save to prevent overwriting concurrent changes.
+</ResponseField>
+
+<ResponseField name="path" type="string" required>
+  The filesystem path where the data was written.
+</ResponseField>
+
+## Examples
+
+<CodeGroup>
+
+```typescript TypeScript
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
+import type { AppRouter } from "@slides/api";
+
+const client = createORPCClient<AppRouter>(
+  new RPCLink({ url: "http://localhost:3000/rpc" })
+);
+
+// Load, modify, and save with staleness protection
+const loaded = await client.slideshowLoad({ datasetId: "my-project" });
+const digest = loaded.provenance["0"]?.sourceId; // capture current digest
+
+const updatedSlideshows = loaded.slideshows.map((sw) => ({
+  ...sw,
+  title: sw.title + " (updated)",
+}));
+
+const result = await client.slideshowSave({
+  datasetId: "my-project",
+  slideshows: updatedSlideshows,
+  // omit expectedDigest to always overwrite, or pass a prior digest:
+  // expectedDigest: previousDigest,
+});
+
+console.log(result.success); // true
+console.log(result.digest);  // store for next save
+console.log(result.path);    // e.g. "/data/my-project.json"
+```
+
+```bash cURL
+curl -X POST http://localhost:3000/rpc/slideshowSave \
+  -H "Content-Type: application/json" \
+  -d '{
+    "datasetId": "my-project",
+    "slideshows": [
+      {
+        "title": "My Project",
+        "concepts": {
+          "eng": { "label": "Engineering", "color": "blue" }
+        },
+        "slides": [
+          {
+            "order": 1,
+            "concept": "eng",
+            "blocks": [
+              { "explainer": { "content": "Initial slide content." } }
+            ]
+          }
+        ]
+      }
+    ]
+  }'
+```
+
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "success": true,
+  "digest": "sha256:a3f8c2...",
+  "path": "/data/my-project.json"
+}
+```
+
+## Staleness protection
+
+The `expectedDigest` field implements optimistic concurrency control. The workflow is:
+
+1. Call `slideshowLoad` to get the current data.
+2. Note the `digest` returned from a subsequent `slideshowSave`, or capture it from the provenance on load.
+3. When saving changes, pass that digest as `expectedDigest`.
+4. If another client saved in the meantime, the digests will differ and the save is rejected.
+5. On rejection, reload the latest data, re-apply your changes, and save again.
+
+<Warning>
+  Omitting `expectedDigest` disables staleness detection. Your save will always overwrite whatever is currently on disk. Only omit it when you are certain you hold the latest version.
+</Warning>

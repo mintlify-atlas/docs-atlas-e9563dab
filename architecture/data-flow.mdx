@@ -1,0 +1,222 @@
+---
+title: "Data flow"
+description: "The complete request/response cycle from the React client through the ORPC layer to domain logic and external APIs, including the AI assistant flow."
+---
+
+Every user action in Slides that touches the server follows the same layered path. This page documents that path end-to-end, with specific detail on the AI assistant flow.
+
+## Request/response cycle
+
+```text
+Client → /rpc → Contract → Router → Service → Domain Logic
+                  ↓                    ↓
+              Validation          External APIs
+                                  (Anthropic, etc.)
+```
+
+### 1. Client — React app with TanStack Query
+
+The frontend calls the backend exclusively through the typed ORPC client, wrapped in TanStack Query hooks. The client is initialized once in `apps/web/src/infra/api/client.ts` and consumed via `orpc` helpers in feature code.
+
+```typescript
+// Feature code — TanStack Query mutation via ORPC
+const mutation = orpc.slideshowAssistant.useMutation({
+  onSuccess: (data) => {
+    // data is fully typed as AssistantResponse
+  },
+});
+
+mutation.mutate({ slideshowId, prompt, currentSlideshow });
+```
+
+The client has no knowledge of endpoints or HTTP — it works entirely with typed procedure names. Changing the server-side output type immediately produces a TypeScript error here.
+
+### 2. Transport — HTTP to Elysia at `/rpc`
+
+ORPC serializes the procedure call to an HTTP request and sends it to the Elysia server. The server (`apps/server/src/index.ts`) mounts the ORPC handler at `/rpc`. Elysia routes the request to the ORPC handler without inspecting its contents.
+
+### 3. Contract — input validation
+
+ORPC validates the incoming request against the procedure's input schema before the handler runs. Schemas are defined using TypeBox and bridged to Zod via `@sinclair/typemap`:
+
+```typescript
+// packages/api/src/slideshow/contracts.ts
+export const slideshowContracts = {
+  slideshowAssistant: publicProcedure
+    .input(Zod(AssistantRequestSchema))   // TypeBox → Zod conversion
+    .output(Zod(AssistantResponseSchema))
+    .errors(slideshowAssistantErrors),
+};
+```
+
+If the input does not conform to `AssistantRequestSchema`, ORPC rejects the request with a typed error before any handler code runs.
+
+### 4. Router — thin wiring
+
+The router handler connects the validated input to the appropriate service. Routers contain no orchestration logic — they only delegate:
+
+```typescript
+// packages/api/src/routers/slideshow.ts
+export const slideshowRouter = {
+  slideshowAssistant: slideshowContracts.slideshowAssistant.handler(
+    async ({ input, context, errors }) => {
+      return handleSlideshowAssistant(input, context.anthropic, errors);
+    }
+  ),
+
+  slideshowLoad: slideshowContracts.slideshowLoad.handler(
+    async ({ input, context }) => {
+      return handleSlideshowLoad(input, context.slideshowFs);
+    }
+  ),
+
+  slideshowSave: slideshowContracts.slideshowSave.handler(
+    async ({ input, context }) => {
+      return handleSlideshowSave(input, context.slideshowFs);
+    }
+  ),
+};
+```
+
+Each handler is under 5 lines. All logic lives in the service layer.
+
+### 5. Context — request-scoped dependencies
+
+The `createContext` function in `packages/api/src/context.ts` builds the request context that is injected into every handler. It contains the Anthropic client configuration, the filesystem adapter for slideshow persistence, and a placeholder for future session/auth data:
+
+```typescript
+// packages/api/src/context.ts
+export async function createContext({ context: _context, slideshowFs, env }) {
+  return {
+    session: null,          // Future: authenticated user
+    slideshowFs,            // Filesystem adapter (load/save slideshows)
+    anthropic: {
+      apiKey: env.ANTHROPIC_API_KEY,
+      model: env.ANTHROPIC_MODEL,
+      maxTokens: env.ANTHROPIC_MAX_TOKENS,
+    },
+  };
+}
+```
+
+### 6. Service — orchestration
+
+Service files (`*.service.ts`) coordinate domain logic, external API calls, and error handling. They are the only layer that calls both `packages/core` functions and external providers like Anthropic.
+
+### 7. Domain — pure business logic
+
+`packages/core` functions are called by services to apply business rules. Domain functions are pure TypeScript — no HTTP, no I/O, no framework dependencies.
+
+### 8. Response — typed all the way back
+
+The service returns a value matching the contract's output schema. ORPC validates the output, serializes it, and sends it back to the client. TanStack Query receives the response and the React component re-renders with the new data — all typed.
+
+---
+
+## AI assistant flow
+
+The AI assistant is the most complex data flow in the system. Here is the full path from user input to updated slideshow:
+
+### Step 1 — User submits a prompt
+
+The user types a natural language prompt in the assistant panel. The frontend packages the current slideshow state alongside the prompt into an `AssistantRequest` and calls `orpc.slideshowAssistant.mutate()`.
+
+```typescript
+// AssistantRequest shape (from packages/api/src/slideshow/schemas.ts)
+{
+  slideshowId: string,
+  prompt: string,           // e.g. "Make the title slide more concise"
+  currentSlideshow: Slideshow
+}
+```
+
+### Step 2 — Server calls Anthropic Claude
+
+The `handleSlideshowAssistant` service in `packages/api/src/slideshow/assistant-service.ts` receives the request. It builds a system prompt (from `packages/core/src/prompts.ts`) that instructs Claude on the slideshow data model and the JSON Patch format expected in its response. It then calls the Anthropic API with the user's prompt and the current slideshow as context.
+
+### Step 3 — Claude responds with JSON patch operations
+
+Claude returns a structured JSON response containing an array of [JSON Patch](https://jsonpatch.com/) operations targeting specific paths in the slideshow document, plus a human-readable summary of what was changed.
+
+```json
+{
+  "operations": [
+    { "op": "replace", "path": "/slides/0/title", "value": "New Title" },
+    { "op": "add", "path": "/slides/0/blocks/-", "value": { ... } }
+  ],
+  "summary": "Updated the title slide with a more concise heading."
+}
+```
+
+### Step 4 — Service validates and applies the patch
+
+The service validates Claude's output against the expected patch schema (using helpers from `packages/core`). Valid patches are applied to the current slideshow using the transaction utilities in `packages/core/src/transactions.ts`. Invalid or out-of-bounds patches are rejected with a typed error.
+
+### Step 5 — AssistantResponse returned to client
+
+The service returns an `AssistantResponse` containing the patched slideshow and the summary string:
+
+```typescript
+// AssistantResponse shape
+{
+  slideshow: Slideshow,  // Updated slideshow after patch applied
+  summary: string        // Human-readable description of changes
+}
+```
+
+The frontend receives this response, updates its local state with the new slideshow, and displays the summary to the user.
+
+### AI flow diagram
+
+```text
+User prompt
+    │
+    ▼
+AssistantRequest { slideshowId, prompt, currentSlideshow }
+    │
+    ▼  (HTTP POST /rpc)
+ORPC contract validates input
+    │
+    ▼
+Router → handleSlideshowAssistant(input, context.anthropic)
+    │
+    ▼
+Build system prompt  (packages/core/src/prompts.ts)
+    │
+    ▼
+Anthropic Claude API call
+    │
+    ▼
+Claude returns JSON patch operations + summary
+    │
+    ▼
+Validate patch schema  (packages/core validation)
+    │
+    ▼
+Apply patch to slideshow  (packages/core transactions)
+    │
+    ▼
+AssistantResponse { slideshow, summary }
+    │
+    ▼  (HTTP response)
+ORPC contract validates output
+    │
+    ▼
+TanStack Query updates cache → React re-renders
+```
+
+<Note>
+  The Anthropic API key is held server-side only, in validated environment variables accessed via `@slides/config/server`. The frontend never has access to the key and communicates only through the typed ORPC endpoint.
+</Note>
+
+## Load and save flow
+
+For `slideshowLoad` and `slideshowSave`, the flow is simpler:
+
+1. Client calls `orpc.slideshowLoad.useQuery()` or `orpc.slideshowSave.useMutation()`
+2. ORPC validates input against `LoadInputSchema` / `SaveInputSchema`
+3. Router delegates to `handleSlideshowLoad` / `handleSlideshowSave`
+4. Service uses the `SlideshowFsAdapter` from context to read/write JSON files on the filesystem
+5. Response is validated against `LoadOutputSchema` / `SaveOutputSchema` and returned
+
+The filesystem adapter is injected via context, which means the server app controls the storage implementation and the service code remains testable in isolation.

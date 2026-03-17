@@ -1,0 +1,151 @@
+---
+title: "Standalone binary"
+description: "Deploy Slides as a single self-contained executable with no runtime dependencies."
+---
+
+The standalone binary packages the server, web assets, and default slideshow data into a single executable file. It is approximately 23 MB, requires no Node.js, Bun, or other runtime to be installed on the target machine, and runs on macOS, Linux, and Windows.
+
+## Supported platforms
+
+- macOS (Apple Silicon and Intel)
+- Linux (x86-64)
+- Windows (x86-64)
+
+## Getting the binary
+
+### From a pre-built archive
+
+<Tabs>
+  <Tab title="macOS / Linux">
+    ```bash
+    tar -xzf slides.tar.gz
+    cd slides
+    ./slides --port 4000
+    ```
+  </Tab>
+  <Tab title="Windows">
+    Extract `slides.zip` using Windows Explorer or:
+
+    ```powershell
+    Expand-Archive slides.zip -DestinationPath slides
+    cd slides
+    .\slides.exe --port 4000
+    ```
+  </Tab>
+</Tabs>
+
+### Directory structure after extraction
+
+After extracting, the archive produces the following layout. The `web/` directory must remain co-located with the binary — moving the binary alone will break static asset serving.
+
+```
+slides/
+├── slides               # The binary (slides.exe on Windows)
+├── web/                 # Bundled web assets (must stay alongside the binary)
+└── data/slideshows/     # Default slideshow data
+    └── default.json
+```
+
+You can use the bundled `data/slideshows/` directory or point to your own collection with `--data-dir`.
+
+## Running the binary
+
+```bash
+# Start on the default port (3000)
+./slides
+
+# Start on a custom port
+./slides --port 4000
+
+# Use a custom slideshow directory
+./slides --data-dir /path/to/slideshows --port 4000
+
+# Enable AI assistant features
+./slides --api-key sk-ant-xxx --port 4000
+
+# Open the browser automatically after starting
+./slides --port 4000 --open
+```
+
+Once running, open `http://localhost:<port>` in your browser to view and edit slideshows.
+
+## One-time setup with --init
+
+The `--init` flag saves your current flags as persistent defaults and attempts to install a launcher symlink so you can run `slides` from anywhere in your terminal.
+
+```bash
+# Save defaults and install launcher
+./slides --init --data-dir /path/to/slideshows --port 4000 --api-key sk-ant-xxx
+
+# After a successful init, you can simply run:
+slides
+```
+
+`--init` does two things:
+
+1. **Saves defaults** to your configuration file (see [Config file location](#config-file-location)).
+2. **Installs a launcher symlink** (macOS / Linux only) by trying the following directories in order: `/usr/local/bin`, `/opt/homebrew/bin`, `~/.local/bin`. On Windows, launcher installation is not automated — add the extracted folder to your `PATH` manually instead.
+
+<Note>
+If `~/.local/bin` is used for the symlink and it is not already in your `PATH`, the init output will print a reminder with the exact export command to add.
+</Note>
+
+You can also provide a custom install location:
+
+```bash
+./slides --init --install-path ~/.local/bin
+```
+
+### Config file location
+
+Defaults saved by `--init` are written to a JSON file. The location is platform-dependent:
+
+| Platform | Path |
+|----------|------|
+| macOS / Linux | `~/.config/slides/config.json` |
+| Windows | `%APPDATA%\slides\config.json` |
+
+CLI flags always take precedence over saved config. To update your saved defaults, re-run `--init` with new values or edit `config.json` directly.
+
+Example saved config:
+
+```json
+{
+  "dataDir": "/Users/you/slideshows",
+  "apiKey": "sk-ant-xxx",
+  "port": 4000,
+  "open": false
+}
+```
+
+## Building from source
+
+If you want to build the standalone binary yourself:
+
+<Steps>
+  <Step title="Clone and install dependencies">
+    ```bash
+    git clone <repo-url>
+    cd slides
+    bun install
+    ```
+  </Step>
+  <Step title="Build the standalone archive">
+    ```bash
+    cd apps/server
+    bun run compile:standalone
+    ```
+
+    This runs `scripts/compile-standalone.ts`, which compiles the server binary with Bun's `--compile` flag, bundles the web assets, and packages everything together.
+  </Step>
+  <Step title="Find the output">
+    | Platform | Output file |
+    |----------|-------------|
+    | macOS / Linux | `apps/server/dist-standalone/slides.tar.gz` (~23 MB) |
+    | Windows | `apps/server/dist-standalone/slides.zip` |
+  </Step>
+</Steps>
+
+<Tip>
+The `compile:standalone` script sets `VITE_SERVER_URL=` (empty) so the embedded web app resolves the server URL relative to the page origin, which is correct for standalone deployments where the server and frontend are served from the same port.
+</Tip>

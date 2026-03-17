@@ -1,0 +1,80 @@
+---
+title: "Introduction"
+description: "A high-performance, AI-assisted presentation editing platform built with React 19, Elysia, and TypeScript."
+---
+
+## What is Slides?
+
+Slides is an AI-powered presentation editing platform designed for rapid, high-quality slide creation. It combines a modern React frontend with an AI backend powered by Anthropic Claude — letting you build polished, structured presentations through natural language conversation.
+
+**Target users:** Developers, technical writers, and teams who need to create presentations quickly without sacrificing quality.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get Slides running in minutes with our step-by-step guide
+  </Card>
+  <Card title="AI Assistant" icon="sparkles" href="/features/ai-assistant">
+    Learn how to create and edit slides using natural language
+  </Card>
+  <Card title="Block Types" icon="layout-grid" href="/features/block-types">
+    Explore 12 rich content block types for your slides
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Full reference for the ORPC API used by the frontend
+  </Card>
+</CardGroup>
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Natural language editing" icon="message-square">
+    Describe changes in plain English and the AI assistant applies them as structured patches to your slideshow
+  </Card>
+  <Card title="Rich content blocks" icon="layers">
+    12 block types including charts, code, diagrams, KPIs, Gantt charts, and layered visuals
+  </Card>
+  <Card title="Standalone binary" icon="package">
+    Single cross-platform binary — no Node.js or npm required in production. Works on macOS, Linux, and Windows
+  </Card>
+  <Card title="Type-safe API" icon="shield-check">
+    End-to-end type safety via ORPC: changing a backend procedure immediately surfaces type errors in the frontend
+  </Card>
+  <Card title="Concept system" icon="tag">
+    Organize slides by named, color-coded concepts for structured, categorized presentations
+  </Card>
+  <Card title="Local-first storage" icon="hard-drive">
+    Slideshows persist as JSON files on your filesystem — no database or cloud account needed
+  </Card>
+</CardGroup>
+
+## Architecture at a glance
+
+Slides is a full-stack TypeScript monorepo built with [TurboRepo](https://turbo.build/) and [Bun](https://bun.sh/):
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, TanStack Router, TanStack Query, TailwindCSS v4 |
+| Backend | Elysia on Bun |
+| API | ORPC (type-safe RPC with OpenAPI support) |
+| Validation | TypeBox + Zod |
+| AI | Anthropic Claude (server-side only) |
+| Monorepo | TurboRepo |
+
+See [Architecture Overview](/architecture/overview) for the full system design.
+
+## Next steps
+
+<Steps>
+  <Step title="Install prerequisites">
+    Install [Bun](https://bun.sh/) v1.2.x and Node.js v20+
+  </Step>
+  <Step title="Follow the quickstart">
+    The [Quickstart guide](/quickstart) takes you from zero to a running Slides instance in minutes
+  </Step>
+  <Step title="Add your Anthropic API key">
+    Set `ANTHROPIC_API_KEY` in `apps/server/.env` to enable the AI assistant
+  </Step>
+  <Step title="Create your first slideshow">
+    Use the AI assistant to create your first presentation with a natural language prompt
+  </Step>
+</Steps>

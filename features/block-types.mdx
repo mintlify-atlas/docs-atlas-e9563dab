@@ -1,0 +1,591 @@
+---
+title: "Block types"
+description: "Reference for all 13 block types available in Slides, with TypeScript types, field descriptions, and JSON examples."
+---
+
+A **block** is the unit of content on a slide. Each slide contains one or more blocks. Every block is a `Block` object where exactly one typed field is populated — the rest are `undefined`.
+
+```typescript
+type Block = {
+  explanation?: string;
+  explainer?: Explainer;
+  codeBlock?: CodeBlock;
+  diagram?: Diagram;
+  gantt?: Gantt;
+  table?: Table;
+  chart?: Chart;
+  kpi?: Kpi;
+  kpiGrid?: KpiGrid;
+  radialMetric?: RadialMetric;
+  layers?: Layers;
+  metricsGrid?: MetricsGrid;
+  objectivesDisplay?: ObjectivesDisplay;
+  image?: Image;
+};
+```
+
+The `explanation` field is an optional string that can appear on any block — it holds supplementary text displayed alongside the block content.
+
+<Tip>
+When asking the AI assistant to add a block, name the block type explicitly (e.g., "add a `kpiGrid` block" or "add a Mermaid diagram"). This helps the assistant produce a correctly typed patch.
+</Tip>
+
+---
+
+## Text and code blocks
+
+<AccordionGroup>
+  <Accordion title="explainer — rich text content block">
+    Use `explainer` for prose content: summaries, descriptions, bullet points, or any free-form text. The `content` field accepts Markdown.
+
+    ```typescript
+    type Explainer = {
+      content: string;        // required, min 1 char — Markdown supported
+      lastUpdated?: string;   // optional ISO date string
+      metadata?: Record<string, string>; // optional key-value pairs
+      source?: string;        // optional source URL or citation
+    };
+    ```
+
+    **Fields:**
+
+    | Field | Required | Description |
+    |---|---|---|
+    | `content` | Yes | Markdown text rendered on the slide. |
+    | `lastUpdated` | No | ISO date string indicating when the content was last revised. |
+    | `metadata` | No | Arbitrary string key-value pairs for custom annotations. |
+    | `source` | No | URL or citation for the content's source. |
+
+    **Example:**
+
+    ```json
+    {
+      "explainer": {
+        "content": "## Q3 Performance\n\nRevenue grew **18%** year-over-year, driven by enterprise deals.",
+        "lastUpdated": "2024-09-30",
+        "source": "https://internal.example.com/q3-report"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="codeBlock — syntax-highlighted code snippet">
+    Use `codeBlock` to display code from a file with optional line highlighting. Line numbers anchor the snippet to a specific range in the source file.
+
+    ```typescript
+    type CodeBlock = {
+      file: string;         // required — file path displayed in the header
+      startLine: number;    // required — first line number (min 1)
+      endLine: number;      // required — last line number (min 1)
+      code: string;         // required — the code content to display
+      language?: string;    // optional — syntax highlight language (e.g. "typescript")
+      highlight?: number[]; // optional — line numbers to highlight
+    };
+    ```
+
+    **Fields:**
+
+    | Field | Required | Description |
+    |---|---|---|
+    | `file` | Yes | File path shown in the code block header. |
+    | `startLine` | Yes | First line number (1-indexed). |
+    | `endLine` | Yes | Last line number (1-indexed). |
+    | `code` | Yes | The code string to render. |
+    | `language` | No | Language identifier for syntax highlighting (e.g. `typescript`, `python`, `bash`). |
+    | `highlight` | No | Array of line numbers to visually highlight. |
+
+    **Example:**
+
+    ```json
+    {
+      "codeBlock": {
+        "file": "packages/core/src/schema/entities.ts",
+        "startLine": 51,
+        "endLine": 57,
+        "code": "export const SlideSchema = Type.Object({\n  id: Type.Optional(Type.String()),\n  order: Type.Integer({ minimum: 1 }),\n  concept: Type.String({ minLength: 1 }),\n  blocks: Type.Array(BlockSchema, { minItems: 1 })\n});",
+        "language": "typescript",
+        "highlight": [53, 54]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Data visualization blocks
+
+<AccordionGroup>
+  <Accordion title="diagram — Mermaid diagram">
+    Use `diagram` for any flowchart, sequence diagram, class diagram, or other visualization supported by [Mermaid](https://mermaid.js.org/). The `content` field must be valid Mermaid syntax.
+
+    ```typescript
+    type Diagram = {
+      content: string;   // required — Mermaid diagram source
+      caption?: string;  // optional — displayed below the diagram
+    };
+    ```
+
+    **Example:**
+
+    ```json
+    {
+      "diagram": {
+        "content": "sequenceDiagram\n  Client->>Server: POST /assistant\n  Server->>Anthropic: Messages API\n  Anthropic-->>Server: response\n  Server-->>Client: patchResult",
+        "caption": "AI assistant request flow"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="gantt — Mermaid Gantt chart">
+    Use `gantt` for project timelines and schedules. Rendered as a Mermaid Gantt chart — the `content` must use Mermaid's Gantt syntax.
+
+    ```typescript
+    type Gantt = {
+      content: string;   // required — Mermaid Gantt source
+      caption?: string;  // optional
+    };
+    ```
+
+    **Example:**
+
+    ```json
+    {
+      "gantt": {
+        "content": "gantt\n  title Q4 Roadmap\n  dateFormat YYYY-MM-DD\n  section Backend\n  Auth service :a1, 2024-10-01, 14d\n  section Frontend\n  Dashboard redesign :2024-10-07, 21d",
+        "caption": "Q4 delivery schedule"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="table — tabular data">
+    Use `table` for structured data in rows. Each row is a pipe-delimited (`|`) string. The first row is treated as the header.
+
+    ```typescript
+    type Table = {
+      rows: string[];    // required, min 1 item — pipe-delimited row strings
+      caption?: string;  // optional
+    };
+    ```
+
+    **Example:**
+
+    ```json
+    {
+      "table": {
+        "rows": [
+          "Region | Q3 Revenue | Growth",
+          "North America | $4.2M | +18%",
+          "Europe | $2.1M | +12%",
+          "APAC | $1.3M | +31%"
+        ],
+        "caption": "Q3 revenue by region"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="chart — line, bar, area, or scatter chart">
+    Use `chart` for quantitative data visualizations. Data is provided as CSV rows; the first row is the header. Supports four chart types.
+
+    ```typescript
+    type Chart = {
+      type?: "line" | "bar" | "area" | "scatter"; // optional, defaults to bar
+      csv: {
+        rows: string[]; // required, min 2 items — first row is header
+      };
+      config?: {
+        title?: string;
+        xLabel?: string;
+        yLabel?: string;
+      };
+      caption?: string;
+    };
+    ```
+
+    **Fields:**
+
+    | Field | Required | Description |
+    |---|---|---|
+    | `type` | No | Chart type: `line`, `bar`, `area`, or `scatter`. Defaults to `bar`. |
+    | `csv.rows` | Yes | Array of CSV strings. First row is the column header (min 2 rows total). |
+    | `config.title` | No | Chart title displayed above the visualization. |
+    | `config.xLabel` | No | Label for the X axis. |
+    | `config.yLabel` | No | Label for the Y axis. |
+    | `caption` | No | Caption displayed below the chart. |
+
+    **Example:**
+
+    ```json
+    {
+      "chart": {
+        "type": "line",
+        "csv": {
+          "rows": [
+            "Month,Revenue,Target",
+            "Jul,3.8,4.0",
+            "Aug,4.1,4.0",
+            "Sep,4.2,4.0"
+          ]
+        },
+        "config": {
+          "title": "Monthly Revenue vs Target",
+          "xLabel": "Month",
+          "yLabel": "Revenue ($M)"
+        },
+        "caption": "Q3 actuals vs targets"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="kpi — single key performance indicator">
+    Use `kpi` to highlight a single metric with optional change indicator and status styling.
+
+    ```typescript
+    type Kpi = {
+      label: string;                           // required
+      value: number | string;                  // required
+      change?: number;                         // optional — numeric change amount
+      changeType?: "percent" | "absolute";     // optional — how to display change
+      status?: "positive" | "negative" | "neutral"; // optional — color coding
+      subtitle?: string;                       // optional — secondary label
+      comparison?: string;                     // optional — e.g. "vs last quarter"
+    };
+    ```
+
+    **Example:**
+
+    ```json
+    {
+      "kpi": {
+        "label": "Uptime",
+        "value": "99.97%",
+        "change": 0.02,
+        "changeType": "absolute",
+        "status": "positive",
+        "subtitle": "Last 90 days",
+        "comparison": "vs last quarter"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="kpiGrid — grid of KPI metrics">
+    Use `kpiGrid` to show multiple KPIs in a structured layout. Items share the same fields as a single `kpi` (without `comparison`).
+
+    ```typescript
+    type KpiGridItem = {
+      label: string;
+      value: number | string;
+      change?: number;
+      changeType?: "percent" | "absolute";
+      status?: "positive" | "negative" | "neutral";
+      subtitle?: string;
+    };
+
+    type KpiGrid = {
+      layout: "uniform" | "grid" | "hero" | "spotlight";
+      items: KpiGridItem[]; // min 1 item
+    };
+    ```
+
+    **Layout options:**
+
+    | Layout | Description |
+    |---|---|
+    | `uniform` | Equal-width cards in a single row. |
+    | `grid` | Responsive multi-column grid. |
+    | `hero` | First item is larger and visually emphasized. |
+    | `spotlight` | One item is highlighted prominently; others are secondary. |
+
+    **Example:**
+
+    ```json
+    {
+      "kpiGrid": {
+        "layout": "hero",
+        "items": [
+          { "label": "ARR", "value": "$12.4M", "change": 18, "changeType": "percent", "status": "positive" },
+          { "label": "Customers", "value": 342, "change": 24, "changeType": "absolute", "status": "positive" },
+          { "label": "Churn Rate", "value": "2.1%", "change": -0.3, "changeType": "absolute", "status": "positive" }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="radialMetric — circular progress metric">
+    Use `radialMetric` to show a value as a fraction of a total in a radial/donut chart style.
+
+    ```typescript
+    type RadialMetric = {
+      title?: string;    // optional — displayed above the radial
+      value: number;     // required, min 0 — the current value
+      total: number;     // required, min 1 — the maximum value
+      label?: string;    // optional — label inside the radial
+      subtitle?: string; // optional — secondary text
+      caption?: string;  // optional
+      color?: string;    // optional — color name for the arc
+    };
+    ```
+
+    **Example:**
+
+    ```json
+    {
+      "radialMetric": {
+        "title": "Sprint Completion",
+        "value": 34,
+        "total": 40,
+        "label": "34 / 40",
+        "subtitle": "story points",
+        "caption": "Week 3 of 4",
+        "color": "indigo"
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Layout and structure blocks
+
+<AccordionGroup>
+  <Accordion title="layers — pyramid or stack diagram">
+    Use `layers` to show hierarchical or sequential relationships between 3–5 items. Supports optional sub-segments within each layer.
+
+    ```typescript
+    type LayerColor =
+      | "blue" | "red" | "green" | "yellow" | "purple" | "pink"
+      | "indigo" | "gray" | "orange" | "teal" | "cyan" | "emerald"
+      | "amber" | "rose" | "violet" | "fuchsia" | "sky" | "lime" | "slate";
+
+    type LayerSegment = {
+      label: string;       // required
+      value: string;       // required
+      description: string; // required
+      color?: LayerColor;
+    };
+
+    type Layer = {
+      label: string;       // required
+      value: string;       // required
+      description: string; // required
+      color?: LayerColor;
+      segments?: LayerSegment[]; // optional, 2–5 segments
+    };
+
+    type Layers = {
+      title?: string;
+      caption?: string;
+      layout?: "pyramid" | "stack"; // defaults to pyramid
+      layers: Layer[];              // required, 3–5 layers
+    };
+    ```
+
+    <Note>
+    `layers` requires between 3 and 5 layer items. Fewer than 3 or more than 5 will fail schema validation.
+    </Note>
+
+    **Layout options:**
+
+    | Layout | Description |
+    |---|---|
+    | `pyramid` | Tapered shape, widest at the base. Good for hierarchies where the base layer is the foundation. |
+    | `stack` | Equal-width bands stacked vertically. Good for sequential stages or ordered steps. |
+
+    **Example:**
+
+    ```json
+    {
+      "layers": {
+        "title": "Infrastructure Stack",
+        "layout": "pyramid",
+        "layers": [
+          { "label": "Application", "value": "React + Elysia", "description": "User-facing web app and API server", "color": "indigo" },
+          { "label": "Runtime", "value": "Bun 1.2", "description": "JavaScript runtime and package manager", "color": "sky" },
+          { "label": "Infrastructure", "value": "Linux / Docker", "description": "Container orchestration and host OS", "color": "slate" }
+        ],
+        "caption": "Simplified three-tier stack"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="metricsGrid — ranked metrics with descriptions">
+    Use `metricsGrid` to display 3–5 ranked metrics, each with a title, description, and 1–2 values.
+
+    ```typescript
+    type MetricsGridValue = {
+      label: string;          // required
+      value: number | string; // required
+      unit?: string;          // optional — e.g. "ms", "req/s"
+    };
+
+    type MetricsGridItem = {
+      title: string;                   // required
+      values: MetricsGridValue[];      // required, 1–2 values
+      description: string;             // required
+      rank?: number;                   // optional — display order (min 1)
+    };
+
+    type MetricsGrid = {
+      items: MetricsGridItem[]; // required, 3–5 items
+      layout?: "standard" | "hero";
+    };
+    ```
+
+    **Example:**
+
+    ```json
+    {
+      "metricsGrid": {
+        "layout": "standard",
+        "items": [
+          {
+            "title": "API Latency",
+            "values": [{ "label": "p50", "value": 42, "unit": "ms" }, { "label": "p99", "value": 210, "unit": "ms" }],
+            "description": "Median and tail latency for all API endpoints",
+            "rank": 1
+          },
+          {
+            "title": "Throughput",
+            "values": [{ "label": "Peak", "value": 3200, "unit": "req/s" }],
+            "description": "Maximum sustained requests per second in load tests",
+            "rank": 2
+          },
+          {
+            "title": "Error Rate",
+            "values": [{ "label": "Rate", "value": "0.04%" }],
+            "description": "Percentage of requests returning 5xx responses",
+            "rank": 3
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="objectivesDisplay — OKR-style objectives">
+    Use `objectivesDisplay` to present 1–5 objectives, each with a title, description, and 1–3 key results.
+
+    ```typescript
+    type KeyResult = {
+      category: "increase" | "decrease" | "add" | "remove";
+      text: string; // required
+    };
+
+    type Objective = {
+      title: string;           // required
+      description: string;     // required
+      keyResults: KeyResult[]; // required, 1–3 items
+      rank?: number;           // optional display order (min 1)
+    };
+
+    type ObjectivesDisplay = {
+      objectives: Objective[]; // required, 1–5 items
+      layout?: "default" | "hero";
+    };
+    ```
+
+    **Key result categories:**
+
+    | Category | Meaning |
+    |---|---|
+    | `increase` | A metric or outcome to grow. |
+    | `decrease` | A metric or cost to reduce. |
+    | `add` | A capability or feature to introduce. |
+    | `remove` | A dependency, step, or burden to eliminate. |
+
+    **Example:**
+
+    ```json
+    {
+      "objectivesDisplay": {
+        "layout": "default",
+        "objectives": [
+          {
+            "title": "Improve reliability",
+            "description": "Reach four-nines uptime across all production services",
+            "keyResults": [
+              { "category": "increase", "text": "Uptime from 99.9% to 99.99%" },
+              { "category": "decrease", "text": "Mean time to recovery from 45 min to 10 min" },
+              { "category": "add", "text": "Automated rollback for all deploy pipelines" }
+            ],
+            "rank": 1
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Media blocks
+
+<AccordionGroup>
+  <Accordion title="image — embedded image">
+    Use `image` to embed an image with optional sizing and fit controls.
+
+    ```typescript
+    type Image = {
+      src: string;                                        // required — URL or path
+      alt: string;                                        // required — alt text
+      caption?: string;
+      title?: string;
+      width?: string;                                     // optional — CSS width value
+      height?: string;                                    // optional — CSS height value
+      fit?: "cover" | "contain" | "fill" | "none";        // optional — object-fit
+    };
+    ```
+
+    **Fit options:**
+
+    | Value | Behavior |
+    |---|---|
+    | `cover` | Scales image to fill the container, cropping if needed. |
+    | `contain` | Scales image to fit within the container without cropping. |
+    | `fill` | Stretches image to fill the container exactly. |
+    | `none` | Renders at natural size, no scaling. |
+
+    **Example:**
+
+    ```json
+    {
+      "image": {
+        "src": "https://example.com/architecture-diagram.png",
+        "alt": "System architecture showing frontend, API, and data layers",
+        "caption": "Current production architecture",
+        "fit": "contain",
+        "width": "100%"
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Block type summary
+
+| Block type | Category | Key constraint |
+|---|---|---|
+| `explainer` | Text | `content` required, Markdown supported |
+| `codeBlock` | Code | `file`, `startLine`, `endLine`, `code` all required |
+| `diagram` | Data viz | `content` must be valid Mermaid syntax |
+| `gantt` | Data viz | `content` must be valid Mermaid Gantt syntax |
+| `table` | Data viz | `rows` array, min 1 row |
+| `chart` | Data viz | `csv.rows` min 2 rows; `type` defaults to `bar` |
+| `kpi` | Data viz | `label` and `value` required |
+| `kpiGrid` | Data viz | `layout` required; `items` min 1 |
+| `radialMetric` | Data viz | `value` min 0; `total` min 1 |
+| `layers` | Layout | 3–5 layers required |
+| `metricsGrid` | Layout | 3–5 items; each item has 1–2 values |
+| `objectivesDisplay` | Layout | 1–5 objectives; each has 1–3 key results |
+| `image` | Media | `src` and `alt` required |

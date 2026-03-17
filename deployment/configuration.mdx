@@ -1,0 +1,163 @@
+---
+title: "Configuration"
+description: "How to configure Slides for development and standalone binary deployments."
+---
+
+Slides supports two configuration modes: environment files for development, and a JSON config file for the standalone binary.
+
+## Development configuration
+
+In development, configuration is loaded from `.env` files in each app directory. Copy the example files before your first run:
+
+```bash
+cp apps/server/.env.example apps/server/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+Then edit the files to match your local environment. See [Environment variables](/deployment/environment-variables) for a full reference of all available variables.
+
+The development server runs on two ports by default:
+- **Frontend**: `http://localhost:3001`
+- **Backend**: `http://localhost:3000`
+
+Make sure `VITE_SERVER_URL` in `apps/web/.env` points at the backend URL, and `CORS_ORIGIN` in `apps/server/.env` allows the frontend origin.
+
+## Standalone binary configuration
+
+When running the standalone binary, configuration is resolved from three sources in priority order:
+
+1. **CLI flags** — highest priority, override everything
+2. **Environment variables** — middle priority
+3. **Saved config file** — used as persistent defaults
+4. **Built-in defaults** — fallback values
+
+### Config file
+
+The config file stores defaults that were saved with `--init`. The file location is platform-dependent:
+
+| Platform | Path |
+|----------|------|
+| macOS / Linux | `~/.config/slides/config.json` |
+| Windows | `%APPDATA%\slides\config.json` |
+
+Example config file:
+
+```json
+{
+  "dataDir": "/Users/you/presentations",
+  "apiKey": "sk-ant-xxx",
+  "port": 4000,
+  "open": false
+}
+```
+
+The following fields are recognized:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `port` | number | Port to listen on |
+| `dataDir` | string | Absolute path to slideshow JSON directory |
+| `apiKey` | string | Anthropic API key for AI features |
+| `open` | boolean | Whether to open the browser on start |
+
+### Saving defaults
+
+The easiest way to write the config file is with the `--init` flag:
+
+```bash
+./slides --init --port 4000 --data-dir ~/presentations --api-key sk-ant-xxx
+```
+
+This saves the provided values and exits. Subsequent runs of `slides` (with no flags) will use those defaults.
+
+You can also edit the config file directly with any text editor. The file is plain JSON.
+
+### Updating saved defaults
+
+Re-run `--init` with updated values to overwrite the file:
+
+```bash
+# Change the port and data directory, keep other saved values
+./slides --init --port 8080 --data-dir /new/path
+```
+
+<Note>
+Flags not passed to `--init` do not carry over from a previous config — the entire file is rewritten on each `--init` run. Include all values you want to persist.
+</Note>
+
+## Port configuration
+
+<Tabs>
+  <Tab title="Standalone binary">
+    Pass `--port` at the command line or save it as a default:
+
+    ```bash
+    # One-time
+    ./slides --port 8080
+
+    # Persist as default
+    ./slides --init --port 8080
+    ```
+  </Tab>
+  <Tab title="Development">
+    Set `PORT` in `apps/server/.env`:
+
+    ```bash
+    PORT=8080
+    ```
+
+    The frontend dev server port is controlled by Vite's `--port` option and does not use the `.env` file.
+  </Tab>
+</Tabs>
+
+## Data directory
+
+By default the server loads slideshow JSON files from `./data/slideshows` (relative to the binary location or the working directory). To use a different directory:
+
+<Tabs>
+  <Tab title="Standalone binary">
+    ```bash
+    # One-time
+    ./slides --data-dir /var/data/presentations
+
+    # Persist as default
+    ./slides --init --data-dir /var/data/presentations
+    ```
+  </Tab>
+  <Tab title="Development">
+    Set `DATA_DIR` in `apps/server/.env`:
+
+    ```bash
+    DATA_DIR=/var/data/presentations
+    ```
+  </Tab>
+</Tabs>
+
+The data directory fallback order is:
+1. `--data-dir` flag / `DATA_DIR` env var
+2. Saved config `dataDir`
+3. `CWD/data/slideshows`
+4. Bundled location inside the binary
+
+## CORS configuration
+
+CORS is configured via the `CORS_ORIGIN` environment variable (development) or is automatically set to allow all origins in standalone binary mode.
+
+**Development:** set `CORS_ORIGIN` in `apps/server/.env` to match the frontend origin:
+
+```bash
+CORS_ORIGIN=http://localhost:3001
+```
+
+To allow multiple origins or a wildcard in development, set the value accordingly:
+
+```bash
+# Allow a specific production frontend
+CORS_ORIGIN=https://slides.example.com
+```
+
+**Standalone binary:** CORS is opened to all origins (`*`) automatically because the frontend and API are served from the same port, so the same-origin policy already applies.
+
+<Warning>
+Do not use a wildcard `CORS_ORIGIN` in a networked development environment where the API is exposed to untrusted clients.
+</Warning>

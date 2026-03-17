@@ -1,0 +1,123 @@
+---
+title: "Slide"
+description: "A single slide in a slideshow: ordered position, concept reference, and one or more content blocks."
+---
+
+A `Slide` represents one slide in a `Slideshow`. It carries an order value for sequencing, a concept reference for categorization, and an array of `Block` objects that define its content.
+
+## TypeScript definition
+
+```typescript
+import type { Slide, Block } from "@slides/core";
+
+type Slide = {
+  id?: string;
+  order: number;        // integer, minimum 1
+  concept: string;      // must match a key in slideshow.concepts
+  explanation?: string;
+  blocks: Block[];      // minimum 1 block
+};
+```
+
+## Fields
+
+<ResponseField name="id" type="string">
+  An optional identifier for the slide. Used in digest calculations and by the assistant when referencing specific slides. Not required for the API to function.
+</ResponseField>
+
+<ResponseField name="order" type="integer" required>
+  The 1-based position of this slide in the presentation sequence. The first slide has `order: 1`, the second `order: 2`, and so on. Slides are typically rendered in ascending order.
+</ResponseField>
+
+<ResponseField name="concept" type="string" required>
+  A concept key that must match one of the keys defined in the parent slideshow's `concepts` map. This links the slide to a concept for grouping, filtering, and color-coding in the UI.
+
+  For example, if the slideshow has `concepts: { "infra": { ... }, "product": { ... } }`, each slide's `concept` must be either `"infra"` or `"product"`.
+</ResponseField>
+
+<ResponseField name="explanation" type="string">
+  An optional free-text note or summary for the slide. Not rendered as a content block — used as metadata or speaker notes.
+</ResponseField>
+
+<ResponseField name="blocks" type="Block[]" required>
+  An array of content blocks that make up the visual content of the slide. Must contain at least one block. Blocks are rendered in array order.
+
+  Each `Block` is an object with optional keys for each block type. A block typically has exactly one non-null type field set (e.g., `explainer`, `kpi`, or `chart`). See the [Blocks type reference](/api/types/blocks) for all available block types and their fields.
+</ResponseField>
+
+## JSON example
+
+```json
+{
+  "id": "sl_03",
+  "order": 3,
+  "concept": "growth",
+  "explanation": "Key metrics for Q4 review",
+  "blocks": [
+    {
+      "explainer": {
+        "content": "The following metrics reflect the quarter ending December 31st."
+      }
+    },
+    {
+      "kpiGrid": {
+        "layout": "grid",
+        "items": [
+          {
+            "label": "Monthly Active Users",
+            "value": 84000,
+            "change": 12,
+            "changeType": "percent",
+            "status": "positive"
+          },
+          {
+            "label": "Revenue",
+            "value": "$2.4M",
+            "change": 8,
+            "changeType": "percent",
+            "status": "positive"
+          },
+          {
+            "label": "Churn Rate",
+            "value": "3.1%",
+            "change": -0.4,
+            "changeType": "absolute",
+            "status": "positive",
+            "subtitle": "down from 3.5%"
+          }
+        ]
+      }
+    },
+    {
+      "chart": {
+        "type": "line",
+        "csv": {
+          "rows": [
+            "Month,MAU",
+            "Oct,72000",
+            "Nov,78000",
+            "Dec,84000"
+          ]
+        },
+        "config": {
+          "title": "MAU Growth",
+          "xLabel": "Month",
+          "yLabel": "Users"
+        }
+      }
+    }
+  ]
+}
+```
+
+## How `order` works
+
+The `order` field is an integer starting at `1`. Slides are not required to have contiguous order values — gaps are allowed (e.g., `1, 2, 5, 10`). The UI renders slides sorted by ascending `order`.
+
+When the AI assistant creates a new slide, it assigns an `order` value that places the slide in the correct position relative to existing slides.
+
+## How `concept` works
+
+Every slide must reference a concept key that exists in the parent slideshow's `concepts` map. This is validated at save time and by the AI assistant before generating patches.
+
+If you add a new concept to a slideshow's `concepts` map, you can then assign that concept to new or existing slides.

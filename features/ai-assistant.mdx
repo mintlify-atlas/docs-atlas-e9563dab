@@ -1,0 +1,260 @@
+---
+title: "AI assistant"
+description: "Use natural language to create, edit, and restructure slides. The assistant translates your requests into structured JSON patches applied to your slideshow."
+---
+
+The AI assistant is the primary way to modify slideshows in Slides. You describe a change in plain English and the assistant produces a validated JSON patch that the frontend applies to the in-memory slideshow state.
+
+<Note>
+The assistant requires `ANTHROPIC_API_KEY` to be set in `apps/server/.env`. Requests without a valid key return an `API_KEY_MISSING` error immediately.
+</Note>
+
+## How it works
+
+<Steps>
+  <Step title="You send a request">
+    The frontend calls the `slideshowAssistant` ORPC procedure with your natural language input, the current slideshow data, and optional conversation history.
+  </Step>
+  <Step title="The server builds context">
+    The server creates a `StateDigest` — a lightweight summary of the slideshow (slide count, slide IDs, concept keys, current slide index) — and builds a message array for the Anthropic API. Depending on `useFullContext`, this includes either the full slideshow JSON or only the current slide.
+  </Step>
+  <Step title="Claude generates a response">
+    The request is sent to `https://api.anthropic.com/v1/messages` using the `SLIDESHOW_SYSTEM_PROMPT`. Claude returns a text response that embeds a JSON patch.
+  </Step>
+  <Step title="The patch is extracted and validated">
+    `extractPatchFromResponse` parses the JSON patch from the assistant's text. `validatePatchWithSemantics` checks the patch against the current slideshow shape. If validation fails, the server returns an `invalid` result with error details.
+  </Step>
+  <Step title="A PatchTransaction is created">
+    If the patch is valid, a `PatchTransaction` is returned — an immutable record that includes the patch, its scope (slideshow-level or slide-level), a base digest for staleness detection, and a timestamp.
+  </Step>
+  <Step title="You apply or discard">
+    The frontend holds the `PatchTransaction` as pending. You click **Apply** to apply it, or navigate away to discard it. On apply, the patch is re-validated against the current state to catch any drift since the response was received.
+  </Step>
+</Steps>
+
+## What you can ask for
+
+The assistant understands a wide range of slide editing requests:
+
+| Category | Example prompts |
+|---|---|
+| Add content | `"Add a slide about Q3 revenue with a bar chart"` |
+| Edit content | `"Update the explainer on slide 3 to mention the new API"` |
+| Restructure | `"Move the deployment slide before the architecture slide"` |
+| Add blocks | `"Add a KPI block showing 94% uptime"` |
+| Concepts | `"Assign slide 2 to the 'Infrastructure' concept"` |
+| Diagrams | `"Add a Mermaid sequence diagram for the auth flow"` |
+| Multiple slides | `"Add a table of contents slide at the beginning"` |
+
+## The `useFullContext` flag
+
+Every request includes a `useFullContext` boolean that controls how much slideshow data the assistant sees.
+
+<Tabs>
+  <Tab title="Full context (useFullContext: true)">
+    The complete slideshow JSON is included in the prompt. Use this for operations that span multiple slides: adding slides, reordering, renaming concepts, or restructuring.
+
+    The frontend automatically sets `useFullContext: true` when your input contains keywords like `slides`, `add`, `insert`, `move`, `reorder`, `copy`, `rename`, `title`, `concept`, `first`, `last`, `previous`, `next`, and similar multi-slide terms.
+  </Tab>
+  <Tab title="Slide context (useFullContext: false)">
+    Only the current slide's data is included in the prompt. This reduces token usage and keeps the response focused. Used for edits scoped to a single slide: updating block content, adding a block to the current slide, or fixing text.
+  </Tab>
+</Tabs>
+
+<Tip>
+For large slideshows, scoped requests (single-slide edits) are faster and cheaper. The assistant switches automatically based on your phrasing — you don't need to set this flag manually.
+</Tip>
+
+## Request schema
+
+The `slideshowAssistant` procedure accepts the following input:
+
+<ParamField body="slideshows" type="Slideshow[]" required>
+  The full array of slideshows currently loaded. The assistant reads from `slideshows[currentSlideshowIndex]`.
+</ParamField>
+
+<ParamField body="currentSlideshowIndex" type="integer" required>
+  Zero-based index of the active slideshow within the `slideshows` array.
+</ParamField>
+
+<ParamField body="currentSlide" type="integer" required>
+  Zero-based index of the slide currently visible in the editor. Used to provide the assistant with focused context when `useFullContext` is `false`.
+</ParamField>
+
+<ParamField body="userInput" type="string" required>
+  Your natural language request, e.g. `"Add a bar chart showing monthly revenue"`.
+</ParamField>
+
+<ParamField body="previousMessages" type="AssistantMessage[]">
+  Optional array of prior conversation turns. Each entry has `role` (`"user"` or `"assistant"`) and `content`. Pass this to maintain conversational context across turns.
+</ParamField>
+
+<ParamField body="useFullContext" type="boolean" required>
+  When `true`, the full slideshow JSON is included in the prompt. When `false`, only the current slide is included.
+</ParamField>
+
+### AssistantMessage shape
+
+```typescript
+type AssistantMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+  type?: "patch-summary" | "validation-error";
+  data?: unknown;
+};
+```
+
+When sending `previousMessages`, only messages with `role: "user"` or `role: "assistant"` are forwarded to the Anthropic API. System messages are filtered out on the frontend.
+
+## Example: request and response
+
+<CodeGroup>
+
+```json request.json
+{
+  "slideshows": [
+    {
+      "id": "ss-1",
+      "title": "Q3 Review",
+      "concepts": {
+        "metrics": { "label": "Metrics", "color": "blue" }
+      },
+      "slides": [
+        {
+          "order": 1,
+          "concept": "metrics",
+          "blocks": [
+            { "explainer": { "content": "Q3 performance summary" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "currentSlideshowIndex": 0,
+  "currentSlide": 0,
+  "userInput": "Add a KPI block showing 94% uptime",
+  "previousMessages": [],
+  "useFullContext": false
+}
+```
+
+```json response.json
+{
+  "assistantText": "I'll add a KPI block showing 94% uptime to slide 1.",
+  "wasTruncated": false,
+  "patchResult": {
+    "status": "ok",
+    "transaction": {
+      "id": "tx-abc123",
+      "patch": [
+        {
+          "op": "add",
+          "path": "/blocks/1",
+          "value": {
+            "kpi": {
+              "label": "Uptime",
+              "value": "94%",
+              "status": "positive"
+            }
+          }
+        }
+      ],
+      "scope": { "type": "slide", "slideIndex": 0 },
+      "baseDigest": {
+        "slideshowId": "ss-1",
+        "slideCount": 1,
+        "currentSlideIndex": 0
+      },
+      "createdAt": 1710000000000
+    },
+    "scope": { "type": "slide", "slideIndex": 0 },
+    "patch": [{ "op": "add", "path": "/blocks/1", "value": { "kpi": { "label": "Uptime", "value": "94%", "status": "positive" } } }]
+  },
+  "digest": {
+    "slideshowId": "ss-1",
+    "slideshowTitle": "Q3 Review",
+    "slideCount": 1,
+    "slideIds": [null],
+    "conceptKeys": ["metrics"],
+    "currentSlideIndex": 0,
+    "currentSlideId": null,
+    "currentSlideOrder": 1
+  }
+}
+```
+
+</CodeGroup>
+
+## Response structure
+
+A successful response returns an `AssistantResponsePayload` with these fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `assistantText` | `string` | The assistant's full text response, including explanation and the embedded patch. |
+| `wasTruncated` | `boolean` | `true` if the response hit the `max_tokens` limit. If so, try breaking the request into smaller pieces. |
+| `patchResult` | `PatchOrchestrationResult` | The outcome of patch extraction and validation. See below. |
+| `digest` | `StateDigest` | Snapshot of the slideshow state at the time of the response. Used to detect drift before applying. |
+
+### PatchOrchestrationResult variants
+
+```typescript
+type PatchOrchestrationResult =
+  | { status: "ok"; transaction: PatchTransaction; scope: PatchScope; patch: unknown[] }
+  | { status: "invalid"; errors: unknown[]; patch: unknown[]; phase?: string }
+  | { status: "noop"; reason: "no-patch" | "missing-target"; scope?: PatchScope };
+```
+
+| Status | Meaning |
+|---|---|
+| `ok` | Patch is valid and ready to apply. The `transaction` field contains the immutable patch record. |
+| `invalid` | Patch failed semantic validation. The `errors` array contains details and suggested fixes. |
+| `noop` | No patch was generated (`no-patch`) or the target slide is missing (`missing-target`). |
+
+## Conversation history
+
+The assistant supports multi-turn conversations. After each turn, the frontend appends both the user message and the assistant's response to the `messages` array. On the next turn, all prior conversation messages are sent as `previousMessages`.
+
+```typescript
+// Conversation messages are filtered before sending:
+const conversationMessages = messages.filter(
+  (m) => m.role !== "system" || m.type === "patch-summary"
+);
+
+// Only user/assistant roles go to the API:
+previousMessages: conversationMessages
+  .filter((m) => m.role !== "system")
+  .map((m) => ({ role: m.role, content: m.content }))
+```
+
+System messages (patch-ready notices, validation warnings) are kept in the frontend message list but never forwarded to the Anthropic API.
+
+## Staleness detection
+
+A `PatchTransaction` carries the `StateDigest` captured at response time. Before applying, the frontend calls `evaluateTransactionFreshness`:
+
+- **fresh** — digest matches current state; apply proceeds.
+- **stale** — the slideshow structure changed (concept drift or structural drift) since the patch was generated. The patch is discarded and you can re-ask.
+- **expired** — the transaction's `createdAt` timestamp is too old (default TTL: controlled by `TX_TTL_MS`). The patch is discarded.
+
+## Error codes
+
+| Error | Cause |
+|---|---|
+| `API_KEY_MISSING` | `ANTHROPIC_API_KEY` is not set in the server environment. |
+| `ANTHROPIC_RATE_LIMITED` | Anthropic's rate limit was hit. The response includes a `retryAfter` value in seconds when available. |
+| `ANTHROPIC_API_ERROR` | The Anthropic API returned a non-2xx response. |
+| `INVALID_RESPONSE` | The API returned a response with no text content block. |
+| `PATCH_GENERATION_FAILED` | The assistant response did not produce a valid patch result. |
+
+## Limitations and best practices
+
+<Warning>
+If `wasTruncated` is `true` in the response, the patch was likely cut off mid-generation. Break large requests into smaller, focused edits.
+</Warning>
+
+- **Be specific.** "Add a bar chart for Q3 revenue with months on X axis" works better than "make a chart."
+- **One logical change per request.** Multiple unrelated changes in a single prompt increase the chance of partial or invalid patches.
+- **Use follow-up turns.** If the first patch isn't quite right, describe the correction in the next message — conversation history gives the assistant context.
+- **Single-slide edits use less context.** If you're only editing the current slide, avoid words like "all slides" or "move" which trigger full-context mode.
+- **Large slideshows are slower.** Full-context mode sends the entire slideshow JSON to Anthropic. Slideshows with many large blocks will have higher latency and token usage.

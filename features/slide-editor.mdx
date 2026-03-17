@@ -1,0 +1,154 @@
+---
+title: "Slide editor"
+description: "The web UI for viewing, navigating, and editing slideshows. Built with React 19, TanStack Router, and TanStack Query."
+---
+
+The slide editor is the main interface in `apps/web`. It renders your slideshow, lets you navigate between slides and slideshows, and gives you access to the AI assistant, JSON editor, and save controls.
+
+## Architecture overview
+
+The frontend is a **React 19** application built with **Vite** using Feature-Sliced Design principles. All slideshow UI lives under `apps/web/src/features/slideshow/`.
+
+| Layer | Technology |
+|---|---|
+| Routing | TanStack Router (file-based, `src/routes/`) |
+| Server state | TanStack Query (data fetching, caching, mutations) |
+| Local state | Custom React hooks (`useSlideshowStore`) |
+| API calls | ORPC typed client (`src/infra/api/client.ts`) |
+| Styling | TailwindCSS v4 + shadcn/ui (Radix UI) |
+| Domain logic | Adapter layer at `src/domain/slideshow/` |
+
+## Loading slideshows
+
+You can load slideshows in two ways:
+
+<Tabs>
+  <Tab title="Load from server">
+    Click **Load from server** in the input view. The frontend calls the `slideshowLoad` ORPC procedure, which reads JSON files from the server's data directory and returns validated slideshow data with provenance metadata.
+
+    ```typescript
+    // src/features/slideshow/api/queries.ts
+    export const useSlideshowLoadQuery = (datasetId: string) =>
+      useQuery(orpc.slideshowLoad.queryOptions({ input: { datasetId } }));
+    ```
+
+    Slideshows loaded from the server include **provenance** — metadata about the source file's location and whether it is writable. Only server-loaded slideshows can be saved back.
+  </Tab>
+  <Tab title="Paste JSON">
+    Paste a raw slideshow JSON array directly into the input field. The frontend validates the JSON client-side and loads it into memory. Manually loaded slideshows are read-only (no provenance, so no save target).
+  </Tab>
+</Tabs>
+
+## Navigating slides
+
+Once a slideshow is loaded, you navigate between slides using:
+
+- **Arrow keys** — `←` / `→` to move between slides (keyboard navigation is handled by `useKeyboardNav`).
+- **Slide list panel** — click any slide thumbnail to jump directly.
+- **Fullscreen mode** — press the fullscreen button or use the keyboard shortcut; arrow key navigation remains active.
+
+The current slide index is stored in `useSlideshowStore` and clamped automatically when the slideshow structure changes (e.g., after the AI assistant adds or removes slides).
+
+## Switching slideshows
+
+If multiple slideshows are loaded, a slideshow selector lets you switch between them. Switching resets the current slide to 0 and clears any per-slideshow concept color overrides.
+
+```typescript
+// Slideshow switch resets navigation state:
+const handleSlideshowChange = (newIndex: number) => {
+  const clampedIndex = Math.max(0, Math.min(newIndex, slideshowCount - 1));
+  setCurrentSlideshowIndex(clampedIndex);
+  setCurrentSlide(0);
+  setConceptColors({});
+};
+```
+
+## How slides are organized
+
+Each slide has two key organizational fields:
+
+<ParamField body="order" type="integer">
+  1-based integer that determines the slide's position in the presentation. The editor sorts and renders slides by `order`. When the AI assistant adds or moves slides, it updates this field.
+</ParamField>
+
+<ParamField body="concept" type="string">
+  The key of the concept this slide belongs to (references an entry in the slideshow's `concepts` map). Concepts are displayed as color-coded labels in the slide list. See [Concepts](/features/concepts) for details.
+</ParamField>
+
+## Editing slides
+
+The editor provides two editing modes:
+
+<Tabs>
+  <Tab title="AI assistant">
+    The **AI assistant panel** (`assistant-panel.tsx`) gives you a chat interface to describe changes in natural language. The assistant returns a patch, which you can review in the **pending transaction** card and then apply.
+
+    See [AI assistant](/features/ai-assistant) for the full workflow.
+  </Tab>
+  <Tab title="JSON editor">
+    The **JSON editor panel** (`json-editor-panel.tsx`) shows the raw JSON for the current slideshow. You can edit it directly — changes are validated on save using the TypeBox schemas from `@slides/core`.
+  </Tab>
+</Tabs>
+
+## Saving changes
+
+<Warning>
+Only slideshows loaded from the server can be saved back. Manually pasted slideshows have no provenance and no save target. Use **Load from server** if you need persistence.
+</Warning>
+
+The save flow is manual — there is no auto-save. Click **Save** to persist changes.
+
+<Steps>
+  <Step title="Trigger save">
+    Click the **Save** button. The `onSaveCurrentSlideshow` handler reads the active slideshow's provenance to determine the `targetId` (the dataset ID for the server-side file).
+  </Step>
+  <Step title="Collect slideshows for that target">
+    Multiple slideshows can share a single file. The frontend collects all slideshows whose provenance `targetId` matches the current one.
+  </Step>
+  <Step title="Call slideshowSave">
+    The `slideshowSave` ORPC mutation is called with `{ datasetId, slideshows }`. An optional `expectedDigest` can be passed to detect server-side changes since the last load.
+  </Step>
+  <Step title="Receive result">
+    On success, the server returns `{ success: true, digest, path }`. The `digest` can be used for subsequent staleness checks.
+  </Step>
+</Steps>
+
+The save button shows a loading state while the mutation is in flight (`isSaving: saveMutation.isPending`).
+
+## Validation
+
+The editor runs continuous validation against all loaded slideshows:
+
+- **Schema validation** — `validateSlideshowComplete` checks the slideshow against the TypeBox schemas.
+- **Runtime validation** — `collectRuntimeValidationErrors` checks Mermaid diagram syntax (via the `mermaid` library) and table/CSV data (via `papaparse`).
+
+Validation errors are stored in `validation-error-store.ts` and shown in a dismissible error card. You can copy all errors to the clipboard for debugging.
+
+## Domain adapter pattern
+
+All imports of `@slides/core` in feature code go through the `src/domain/slideshow/` adapter layer. This gives a single injection point for future cross-cutting concerns (analytics, retry logic, A/B testing) without touching individual component files.
+
+```typescript
+// Correct — import from adapter:
+import { validateSlideshow } from "@/domain/slideshow/validation";
+import { buildAssistantMessages } from "@/domain/slideshow/ai";
+
+// Incorrect — bypasses adapter:
+import { validateSlideshow } from "@slides/core";
+```
+
+## Feature directory layout
+
+```
+apps/web/src/features/slideshow/
+├── api/           # TanStack Query hooks (queries.ts, mutations.ts)
+├── components/    # UI components
+│   ├── blocks/    # BlockRenderer + individual block components
+│   ├── panels/    # Assistant panel, JSON editor, patch card
+│   ├── viewer/    # Slide viewer and navigation
+│   └── concepts/  # Concept color UI
+├── hooks/         # Feature hooks (useAssistant, useSlideshowController, ...)
+├── services/      # Frontend services (ai-assistant.ts: shouldUseFullContext)
+├── state/         # Local state (slideshow-store.ts, validation-error-store.ts)
+└── utils/         # Helpers (markdown renderer, normalization)
+```

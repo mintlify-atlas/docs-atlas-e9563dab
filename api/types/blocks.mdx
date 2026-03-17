@@ -1,0 +1,550 @@
+---
+title: "Blocks"
+description: "All 13 content block types available on a slide: text, code, diagrams, metrics, layout, and media."
+---
+
+A `Block` is an object with optional fields for each block type. Each block in a slide's `blocks` array typically has exactly one type field set. All block types are defined in `packages/core/src/schema/blocks.ts`.
+
+```typescript
+import type { Block } from "@slides/core";
+
+type Block = {
+  explanation?:       string;             // inline note (not rendered)
+  explainer?:         Explainer;
+  codeBlock?:         CodeBlock;
+  diagram?:           Diagram;
+  gantt?:             Gantt;
+  table?:             Table;
+  chart?:             Chart;
+  kpi?:               Kpi;
+  kpiGrid?:           KpiGrid;
+  radialMetric?:      RadialMetric;
+  layers?:            Layers;
+  metricsGrid?:       MetricsGrid;
+  objectivesDisplay?: ObjectivesDisplay;
+  image?:             Image;
+};
+```
+
+---
+
+## Text & Code
+
+<AccordionGroup>
+  <Accordion title="explainer">
+    A rich-text content block for narrative or explanatory prose.
+
+    ```typescript
+    type Explainer = {
+      content: string;                      // required, min 1 char
+      lastUpdated?: string;
+      metadata?: Record<string, string>;
+      source?: string;
+    };
+    ```
+
+    ```json
+    {
+      "explainer": {
+        "content": "This quarter we shipped collaborative editing, reducing average session time by 22%.",
+        "source": "Product team retrospective, Jan 2025"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="codeBlock">
+    A syntax-highlighted code snippet anchored to a file range.
+
+    ```typescript
+    type CodeBlock = {
+      file: string;           // required, min 1 char — source file path
+      startLine: number;      // required, integer >= 1
+      endLine: number;        // required, integer >= 1
+      code: string;           // required, min 1 char — the code content
+      language?: string;      // syntax highlighting language (e.g. "typescript")
+      highlight?: number[];   // line numbers to highlight
+    };
+    ```
+
+    ```json
+    {
+      "codeBlock": {
+        "file": "packages/core/src/schema/entities.ts",
+        "startLine": 51,
+        "endLine": 57,
+        "code": "export const SlideSchema = Type.Object({\n  id: Type.Optional(Type.String()),\n  order: Type.Integer({ minimum: 1 }),\n  concept: Type.String({ minLength: 1 }),\n  explanation: Type.Optional(Type.String()),\n  blocks: Type.Array(BlockSchema, { minItems: 1 }),\n});",
+        "language": "typescript",
+        "highlight": [53, 54]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Diagrams & Charts
+
+<AccordionGroup>
+  <Accordion title="diagram">
+    A Mermaid diagram rendered from a content string.
+
+    ```typescript
+    type Diagram = {
+      content: string;    // required, min 1 char — Mermaid diagram syntax
+      caption?: string;
+    };
+    ```
+
+    ```json
+    {
+      "diagram": {
+        "content": "flowchart LR\n  A[Web App] --> B[ORPC API]\n  B --> C[Filesystem]",
+        "caption": "Request flow from browser to disk"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="gantt">
+    A Gantt chart rendered from Mermaid gantt syntax.
+
+    ```typescript
+    type Gantt = {
+      content: string;    // required, min 1 char — Mermaid gantt syntax
+      caption?: string;
+    };
+    ```
+
+    ```json
+    {
+      "gantt": {
+        "content": "gantt\n  title Q4 Timeline\n  dateFormat YYYY-MM-DD\n  section Engineering\n  Auth system :2024-10-01, 30d\n  Export feature :2024-11-01, 21d",
+        "caption": "Engineering milestones for Q4"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="chart">
+    A data chart (line, bar, area, or scatter) built from inline CSV rows.
+
+    ```typescript
+    type Chart = {
+      type?: "line" | "bar" | "area" | "scatter";
+      csv: {
+        rows: string[];   // required, min 2 rows (header + at least one data row)
+      };
+      config?: {
+        title?: string;
+        xLabel?: string;
+        yLabel?: string;
+      };
+      caption?: string;
+    };
+    ```
+
+    ```json
+    {
+      "chart": {
+        "type": "bar",
+        "csv": {
+          "rows": [
+            "Quarter,Revenue",
+            "Q1,$1.8M",
+            "Q2,$2.1M",
+            "Q3,$2.2M",
+            "Q4,$2.4M"
+          ]
+        },
+        "config": {
+          "title": "Quarterly Revenue",
+          "xLabel": "Quarter",
+          "yLabel": "Revenue"
+        },
+        "caption": "Revenue grew 33% year over year"
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Metrics
+
+<AccordionGroup>
+  <Accordion title="kpi">
+    A single key performance indicator with an optional trend indicator.
+
+    ```typescript
+    type Kpi = {
+      label: string;                                        // required, min 1 char
+      value: number | string;                               // required
+      change?: number;                                      // numeric delta
+      changeType?: "percent" | "absolute";
+      status?: "positive" | "negative" | "neutral";
+      subtitle?: string;
+      comparison?: string;                                  // e.g. "vs last quarter"
+    };
+    ```
+
+    ```json
+    {
+      "kpi": {
+        "label": "Monthly Active Users",
+        "value": 84000,
+        "change": 12,
+        "changeType": "percent",
+        "status": "positive",
+        "subtitle": "As of December 31st",
+        "comparison": "vs. last quarter"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="kpiGrid">
+    A grid of KPI items displayed together in a configurable layout.
+
+    ```typescript
+    type KpiGridItem = {
+      label: string;                              // required, min 1 char
+      value: number | string;                     // required
+      change?: number;
+      changeType?: "percent" | "absolute";
+      status?: "positive" | "negative" | "neutral";
+      subtitle?: string;
+    };
+
+    type KpiGrid = {
+      layout: "uniform" | "grid" | "hero" | "spotlight";
+      items: KpiGridItem[];                       // required, min 1 item
+    };
+    ```
+
+    Layout options:
+    - `"uniform"` — all items the same size
+    - `"grid"` — flexible grid
+    - `"hero"` — first item larger than the rest
+    - `"spotlight"` — one item prominently featured
+
+    ```json
+    {
+      "kpiGrid": {
+        "layout": "hero",
+        "items": [
+          {
+            "label": "ARR",
+            "value": "$28.8M",
+            "change": 42,
+            "changeType": "percent",
+            "status": "positive"
+          },
+          {
+            "label": "Customers",
+            "value": 1240,
+            "change": 18,
+            "changeType": "percent",
+            "status": "positive"
+          },
+          {
+            "label": "NPS",
+            "value": 62,
+            "status": "positive"
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="radialMetric">
+    A circular progress indicator showing a value relative to a total.
+
+    ```typescript
+    type RadialMetric = {
+      title?: string;
+      value: number;      // required, >= 0
+      total: number;      // required, >= 1
+      label?: string;
+      subtitle?: string;
+      caption?: string;
+      color?: string;     // any CSS color string
+    };
+    ```
+
+    ```json
+    {
+      "radialMetric": {
+        "title": "Goal Completion",
+        "value": 73,
+        "total": 100,
+        "label": "73%",
+        "subtitle": "of Q4 OKRs completed",
+        "color": "#6366f1"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="metricsGrid">
+    A structured grid of metrics, each with a title, one or two values, a description, and an optional rank.
+
+    ```typescript
+    type MetricsGridValue = {
+      label: string;              // required, min 1 char
+      value: number | string;     // required
+      unit?: string;
+    };
+
+    type MetricsGridItem = {
+      title: string;              // required, min 1 char
+      values: MetricsGridValue[]; // required, 1-2 values
+      description: string;        // required, min 1 char
+      rank?: number;              // integer >= 1
+    };
+
+    type MetricsGrid = {
+      items: MetricsGridItem[];   // required, 3-5 items
+      layout?: "standard" | "hero";
+    };
+    ```
+
+    ```json
+    {
+      "metricsGrid": {
+        "layout": "standard",
+        "items": [
+          {
+            "title": "Latency",
+            "values": [
+              { "label": "p50", "value": 42, "unit": "ms" },
+              { "label": "p99", "value": 210, "unit": "ms" }
+            ],
+            "description": "API response time across all endpoints",
+            "rank": 1
+          },
+          {
+            "title": "Uptime",
+            "values": [{ "label": "SLA", "value": "99.97%" }],
+            "description": "Rolling 90-day availability",
+            "rank": 2
+          },
+          {
+            "title": "Error Rate",
+            "values": [{ "label": "Rate", "value": 0.12, "unit": "%" }],
+            "description": "HTTP 5xx errors as a percentage of total requests",
+            "rank": 3
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Layout
+
+<AccordionGroup>
+  <Accordion title="layers">
+    A visual hierarchy block rendered as a pyramid or stacked layout. Each layer can have optional sub-segments.
+
+    ```typescript
+    type LayerColor =
+      | "blue" | "red" | "green" | "yellow" | "purple" | "pink"
+      | "indigo" | "gray" | "orange" | "teal" | "cyan" | "emerald"
+      | "amber" | "rose" | "violet" | "fuchsia" | "sky" | "lime" | "slate";
+
+    type LayerSegment = {
+      label: string;          // required, min 1 char
+      value: string;          // required, min 1 char
+      description: string;    // required, min 1 char
+      color?: LayerColor;
+    };
+
+    type Layer = {
+      label: string;          // required, min 1 char
+      value: string;          // required, min 1 char
+      description: string;    // required, min 1 char
+      color?: LayerColor;
+      segments?: LayerSegment[]; // 2-5 segments
+    };
+
+    type Layers = {
+      title?: string;
+      caption?: string;
+      layout?: "pyramid" | "stack";
+      layers: Layer[];        // required, 3-5 layers
+    };
+    ```
+
+    ```json
+    {
+      "layers": {
+        "title": "Infrastructure Stack",
+        "layout": "pyramid",
+        "layers": [
+          {
+            "label": "Application",
+            "value": "React + Vite",
+            "description": "Frontend UI layer",
+            "color": "blue"
+          },
+          {
+            "label": "API",
+            "value": "ORPC / Elysia",
+            "description": "RPC server on Bun",
+            "color": "indigo"
+          },
+          {
+            "label": "Storage",
+            "value": "Filesystem",
+            "description": "JSON files on disk",
+            "color": "violet"
+          }
+        ]
+      }
+    }
+    ```
+
+    <Note>
+      The `layers` array must contain between 3 and 5 items. Segments within a layer must contain between 2 and 5 items.
+    </Note>
+  </Accordion>
+
+  <Accordion title="objectivesDisplay">
+    A structured list of objectives, each with a title, description, and key results.
+
+    ```typescript
+    type KeyResult = {
+      category: "increase" | "decrease" | "add" | "remove";
+      text: string;           // required, min 1 char
+    };
+
+    type Objective = {
+      title: string;          // required, min 1 char
+      description: string;    // required, min 1 char
+      keyResults: KeyResult[]; // required, 1-3 items
+      rank?: number;          // integer >= 1
+    };
+
+    type ObjectivesDisplay = {
+      objectives: Objective[]; // required, 1-5 items
+      layout?: "default" | "hero";
+    };
+    ```
+
+    ```json
+    {
+      "objectivesDisplay": {
+        "layout": "default",
+        "objectives": [
+          {
+            "title": "Improve developer experience",
+            "description": "Make it faster and easier to build and ship features.",
+            "keyResults": [
+              {
+                "category": "decrease",
+                "text": "Reduce build time from 90s to under 30s"
+              },
+              {
+                "category": "increase",
+                "text": "Increase test coverage to 80%"
+              }
+            ],
+            "rank": 1
+          },
+          {
+            "title": "Ship collaborative editing",
+            "description": "Allow multiple users to edit the same slideshow simultaneously.",
+            "keyResults": [
+              {
+                "category": "add",
+                "text": "Real-time presence indicators"
+              },
+              {
+                "category": "add",
+                "text": "Conflict-free merge for concurrent edits"
+              }
+            ],
+            "rank": 2
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Media
+
+<AccordionGroup>
+  <Accordion title="image">
+    An image block with alt text, optional caption, and display options.
+
+    ```typescript
+    type Image = {
+      src: string;                              // required, min 1 char — URL or path
+      alt: string;                              // required, min 1 char
+      caption?: string;
+      title?: string;
+      width?: string;                           // CSS width value
+      height?: string;                          // CSS height value
+      fit?: "cover" | "contain" | "fill" | "none";
+    };
+    ```
+
+    ```json
+    {
+      "image": {
+        "src": "/images/architecture-diagram.png",
+        "alt": "System architecture showing the web app, API server, and filesystem",
+        "caption": "High-level system architecture",
+        "title": "Architecture overview",
+        "width": "100%",
+        "fit": "contain"
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Table
+
+<AccordionGroup>
+  <Accordion title="table">
+    A data table defined as an array of pipe-delimited Markdown table rows.
+
+    ```typescript
+    type Table = {
+      rows: string[];     // required, min 1 row — Markdown table syntax
+      caption?: string;
+    };
+    ```
+
+    Each string in `rows` is one row of a Markdown table, including the header separator row.
+
+    ```json
+    {
+      "table": {
+        "rows": [
+          "| Feature | Status | Owner |",
+          "|---------|--------|-------|",
+          "| Collaborative editing | In progress | Platform |",
+          "| PDF export | Planned | Product |",
+          "| AI assistant | Shipped | AI team |"
+        ],
+        "caption": "Q4 feature delivery status"
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
